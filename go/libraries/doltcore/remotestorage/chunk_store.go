@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
+	"golang.org/x/sync/errgroup"
 
 	remotesapi "github.com/dolthub/dolt/go/gen/proto/dolt/services/remotesapi/v1alpha1"
 	"github.com/dolthub/dolt/go/libraries/utils/iohelp"
@@ -198,8 +199,7 @@ func (dcs *DoltChunkStore) GetManyCompressed(ctx context.Context, hashes hash.Ha
 }
 
 const (
-	getLocsBatchSize      = 32 * 1024
-	getLocsMaxConcurrency = 4
+	getLocsBatchSize = (4 * 1024) / 20
 )
 
 type urlAndRanges struct {
@@ -207,78 +207,101 @@ type urlAndRanges struct {
 	Ranges []*remotesapi.RangeChunk
 }
 
+func urlResourcePath(urlStr string) string {
+	u, _ := url.Parse(urlStr)
+	return fmt.Sprintf("%s://%s%s", u.Scheme, u.Host, u.Path)
+}
+
 func (dcs *DoltChunkStore) getDLLocs(ctx context.Context, hashes []hash.Hash) (map[string]urlAndRanges, error) {
 	// results aggregated in resourceToUrlAndRanges
 	resourceToUrlAndRanges := make(map[string]urlAndRanges)
 
 	// channel for receiving results from go routines making grpc calls to get download locations for chunks
-	dlLocChan := make(chan *remotesapi.DownloadLoc, len(hashes))
+	resCh := make(chan []*remotesapi.HttpGetRange, len(hashes))
 
-	// go routine for receiving the results of the grpc calls and aggregating the results into resourceToUrlAndRanges
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for loc := range dlLocChan {
-			switch typedLoc := loc.Location.(type) {
-			case *remotesapi.DownloadLoc_HttpGet:
-				panic("deprecated")
-			case *remotesapi.DownloadLoc_HttpGetRange:
-				if len(typedLoc.HttpGetRange.Ranges) > 0 {
-					urlStr := typedLoc.HttpGetRange.Url
-					urlObj, _ := url.Parse(urlStr)
-
-					resourcePath := fmt.Sprintf("%s://%s%s", urlObj.Scheme, urlObj.Host, urlObj.Path)
-
-					if uAndR, ok := resourceToUrlAndRanges[resourcePath]; ok {
-						uAndR.Ranges = append(uAndR.Ranges, typedLoc.HttpGetRange.Ranges...)
-						resourceToUrlAndRanges[resourcePath] = uAndR
-					} else {
-						resourceToUrlAndRanges[resourcePath] = urlAndRanges{urlStr, typedLoc.HttpGetRange.Ranges}
+	eg, ctx := errgroup.WithContext(ctx)
+	eg.Go(func() error {
+		var reqs []*remotesapi.GetDownloadLocsRequest
+		hashesBytes := HashesToSlices(hashes)
+		batchItr(len(hashesBytes), getLocsBatchSize, func(st, end int) (stop bool) {
+			batch := hashesBytes[st:end]
+			req := &remotesapi.GetDownloadLocsRequest{RepoId: dcs.getRepoId(), ChunkHashes: batch}
+			reqs = append(reqs, req)
+			return false
+		})
+		op := func() error {
+			stream, err := dcs.csClient.StreamDownloadLocations(ctx)
+			if err != nil {
+				return err
+			}
+			seg, ctx := errgroup.WithContext(ctx)
+			completedReqs := 0
+			// Write requests
+			seg.Go(func() error {
+				for i := range reqs {
+					if err := stream.Send(reqs[i]); err != nil {
+						return err
 					}
 				}
+				stream.CloseSend()
+				return nil
+			})
+			// Read responses
+			seg.Go(func() error {
+				for {
+					resp, err := stream.Recv()
+					if err != nil {
+						if err == io.EOF {
+							return nil
+						}
+						return err
+					}
+					tosend := make([]*remotesapi.HttpGetRange, len(resp.Locs))
+					for i, l := range resp.Locs {
+						tosend[i] = l.Location.(*remotesapi.DownloadLoc_HttpGetRange).HttpGetRange
+					}
+					select {
+					case resCh <- tosend:
+						completedReqs += 1
+					case <-ctx.Done():
+						return ctx.Err()
+					}
+				}
+			})
+			err = seg.Wait()
+			reqs = reqs[completedReqs:]
+			if len(reqs) == 0 {
+				close(resCh)
 			}
+			return processGrpcErr(err)
 		}
-	}()
-
-	hashesBytes := HashesToSlices(hashes)
-	var work []func() error
-
-	// batchItr creates work functions which request a batch of chunk download locations and write the results to the
-	// dlLocChan
-	batchItr(len(hashesBytes), getLocsBatchSize, func(st, end int) (stop bool) {
-		batch := hashesBytes[st:end]
-		f := func() error {
-			req := &remotesapi.GetDownloadLocsRequest{RepoId: dcs.getRepoId(), ChunkHashes: batch}
-			resp, err := dcs.csClient.GetDownloadLocations(ctx, req)
-
-			if err != nil {
-				return NewRpcError(err, "GetDownloadLocations", dcs.host, req)
-			}
-
-			for _, loc := range resp.Locs {
-				dlLocChan <- loc
-			}
-
-			return nil
-		}
-
-		work = append(work, f)
-		return false
+		return backoff.Retry(op, backoff.WithMaxRetries(csRetryParams, csClientRetries))
 	})
 
-	var err error
+	// Read locations from |resCh| and assemble into map.
+	eg.Go(func() error {
+		for {
+			select {
+			case locs, ok := <-resCh:
+				if !ok {
+					return nil
+				}
+				for _, loc := range locs {
+					resourcePath := urlResourcePath(loc.Url)
+					if v, ok := resourceToUrlAndRanges[resourcePath]; ok {
+						v.Ranges = append(v.Ranges, loc.Ranges...)
+						resourceToUrlAndRanges[resourcePath] = v
+					} else {
+						resourceToUrlAndRanges[resourcePath] = urlAndRanges{loc.Url, loc.Ranges}
+					}
+				}
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+	})
 
-	// execute the work and close the channel after as no more results will come in
-	func() {
-		defer close(dlLocChan)
-		err = concurrentExec(work, getLocsMaxConcurrency)
-	}()
-
-	// wait for the result aggregator go routine to exit
-	wg.Wait()
-
-	if err != nil {
+	if err := eg.Wait(); err != nil {
 		return nil, err
 	}
 
