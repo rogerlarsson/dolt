@@ -248,3 +248,30 @@ SQL
     [[ "$output" =~ "9,9" ]] || false
     [[ "$output" =~ "9,9" ]] || false
 }
+
+@test "filter-branch fibonacci" {
+    # initial conditions
+    dolt filter-branch "UPDATE test SET c0=1 WHERE pk = 2;"
+    run dolt sql -q "SELECT * FROM test ORDER BY pk;" -r csv
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "0,0" ]] || false
+    [[ "$output" =~ "1,1" ]] || false
+    [[ "$output" =~ "2,1" ]] || false
+
+    for i in 1..5; do
+        dolt commit --allow-empty -m "$i"
+    done
+
+    dolt filter-branch "INSERT INTO test SELECT max(pk)+1, sum(c0) FROM (SELECT pk,c0 FROM test AS OF 'HEAD^' ORDER BY c0 DESC LIMIT 2) AS sub;"
+    run dolt sql -q "SELECT * FROM test ORDER BY pk;" -r csv
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "0,0" ]] || false
+    [[ "$output" =~ "1,1" ]] || false
+    [[ "$output" =~ "2,1" ]] || false
+    [[ "$output" =~ "3,2" ]] || false
+    skip "head is not set correctly in sql env"
+    [[ "$output" =~ "4,3" ]] || false
+    [[ "$output" =~ "5,5" ]] || false
+    [[ "$output" =~ "6,8" ]] || false
+    [[ "$output" =~ "7,13" ]] || false
+}
