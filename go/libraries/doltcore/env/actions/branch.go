@@ -264,22 +264,11 @@ func CheckoutBranch(ctx context.Context, dEnv *env.DoltEnv, brName string) error
 		return err
 	}
 
-	unstagedDocs, err := GetUnstagedDocs(ctx, dEnv)
-	if err != nil {
-		return err
-	}
-
 	dEnv.RepoState.Head = ref.MarshalableRef{Ref: dref}
 	dEnv.RepoState.Working = wrkHash.String()
 	dEnv.RepoState.Staged = stgHash.String()
 
-	err = dEnv.RepoState.Save(dEnv.FS)
-
-	if err != nil {
-		return err
-	}
-
-	return SaveDocsFromWorkingExcludingFSChanges(ctx, dEnv, unstagedDocs)
+	return dEnv.RepoState.Save(dEnv.FS)
 }
 
 var emptyHash = hash.Hash{}

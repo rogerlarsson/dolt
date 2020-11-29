@@ -745,16 +745,14 @@ func GetTablesInConflict(ctx context.Context, dEnv *env.DoltEnv) (workingInConfl
 	return workingInConflict, stagedInConflict, headInConflict, err
 }
 
+// todo: is this the right thing?
 func GetDocsInConflict(ctx context.Context, dEnv *env.DoltEnv) (*diff.DocDiffs, error) {
-	docDetails, err := dEnv.GetAllValidDocDetails()
+	notStaged, _, err := diff.GetDocDiffs(ctx, dEnv)
 	if err != nil {
 		return nil, err
 	}
 
-	workingRoot, err := dEnv.WorkingRoot(ctx)
-	if err != nil {
-		return nil, err
-	}
+	return notStaged, nil
 
-	return diff.NewDocDiffs(ctx, workingRoot, nil, docDetails)
+
 }

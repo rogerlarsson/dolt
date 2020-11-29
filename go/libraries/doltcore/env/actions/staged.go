@@ -44,37 +44,6 @@ func StageTables(ctx context.Context, dEnv *env.DoltEnv, names []string) error {
 	return saveRepoState(ctx, dEnv, working, staged)
 }
 
-func splitTablesAndDocs(names []string) (tbls, docs []string) {
-	for _, nm := range names {
-		if nm == doltdb.DocTableName {
-			continue
-		}
-		if doltdb.DocSet.Contains(nm) {
-			docs = append(docs, nm)
-		} else {
-			tbls = append(tbls, nm)
-		}
-	}
-	return
-}
-
-
-// GetTblsAndDocDetails takes a slice of strings where valid doc names are replaced with doc table name. Doc names are
-// appended to a docDetails slice. We return a tuple of tables, docDetails and error.
-func GetTblsAndDocDetails(dEnv *env.DoltEnv, tbls []string) (tables []string, docDetails []doltdb.DocDetails, err error) {
-	for i, tbl := range tbls {
-		docDetail, err := dEnv.GetOneDocDetail(tbl)
-		if err != nil {
-			return nil, nil, err
-		}
-		if docDetail.DocPk != "" {
-			docDetails = append(docDetails, docDetail)
-			tbls[i] = doltdb.DocTableName
-		}
-	}
-	return tbls, docDetails, nil
-}
-
 func StageAllTables(ctx context.Context, dEnv *env.DoltEnv) error {
 	staged, working, err := getStagedAndWorking(ctx, dEnv)
 	if err != nil {
@@ -120,6 +89,20 @@ func stageTables(ctx context.Context, working, staged *doltdb.RootValue, tbls ..
 
 func stageDocs(ctx context.Context, working, staged *doltdb.RootValue, docs ...string) (*doltdb.RootValue, error) {
 	return MoveDocsBetweenRoots(ctx, docs, working, staged)
+}
+
+func splitTablesAndDocs(names []string) (tbls, docs []string) {
+	for _, nm := range names {
+		if nm == doltdb.DocTableName {
+			continue
+		}
+		if doltdb.DocSet.Contains(nm) {
+			docs = append(docs, nm)
+		} else {
+			tbls = append(tbls, nm)
+		}
+	}
+	return
 }
 
 func saveRepoState(ctx context.Context, dEnv *env.DoltEnv, working, staged *doltdb.RootValue) error {
@@ -216,16 +199,6 @@ func getStagedAndWorking(ctx context.Context, dEnv *env.DoltEnv) (*doltdb.RootVa
 	}
 
 	return roots[StagedRoot], roots[WorkingRoot], nil
-}
-
-func getWorkingAndHead(ctx context.Context, dEnv *env.DoltEnv) (*doltdb.RootValue, *doltdb.RootValue, error) {
-	roots, err := getRoots(ctx, dEnv, WorkingRoot, HeadRoot)
-
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return roots[WorkingRoot], roots[HeadRoot], nil
 }
 
 func getRoots(ctx context.Context, dEnv *env.DoltEnv, rootTypes ...RootType) (map[RootType]*doltdb.RootValue, error) {

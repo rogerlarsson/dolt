@@ -17,19 +17,17 @@ package testcommands
 import (
 	"context"
 	"fmt"
+	"github.com/dolthub/dolt/go/cmd/dolt/commands"
 	"io"
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/dolthub/dolt/go/cmd/dolt/commands/cnfcmds"
-	"github.com/dolthub/dolt/go/cmd/dolt/errhand"
 	"github.com/dolthub/dolt/go/libraries/doltcore/doltdb"
 	"github.com/dolthub/dolt/go/libraries/doltcore/env"
 	"github.com/dolthub/dolt/go/libraries/doltcore/env/actions"
-	"github.com/dolthub/dolt/go/libraries/doltcore/merge"
 	dsqle "github.com/dolthub/dolt/go/libraries/doltcore/sqle"
 )
 
@@ -92,23 +90,12 @@ func (r ResetHard) CommandString() string { return "reset_hard" }
 
 // NOTE: does not handle untracked tables
 func (r ResetHard) Exec(t *testing.T, dEnv *env.DoltEnv) error {
-	headRoot, err := dEnv.HeadRoot(context.Background())
+	ctx := context.Background()
+	headRoot, err := dEnv.HeadRoot(ctx)
 	if err != nil {
 		return err
 	}
-
-	err = dEnv.UpdateWorkingRoot(context.Background(), headRoot)
-	if err != nil {
-		return err
-	}
-
-	_, err = dEnv.UpdateStagedRoot(context.Background(), headRoot)
-	if err != nil {
-		return err
-	}
-
-	err = actions.SaveTrackedDocsFromWorking(context.Background(), dEnv)
-	return err
+	return actions.ResetHard(ctx, dEnv, headRoot)
 }
 
 type Query struct {
@@ -187,81 +174,10 @@ func (m Merge) CommandString() string { return fmt.Sprintf("merge: %s", m.Branch
 
 // Exec executes a Merge command on a test dolt environment.
 func (m Merge) Exec(t *testing.T, dEnv *env.DoltEnv) error {
-	// Adapted from commands/merge.go:Exec()
-	dref, err := dEnv.FindRef(context.Background(), m.BranchName)
-	assert.NoError(t, err)
-
-	cm1 := resolveCommit(t, "HEAD", dEnv)
-	cm2 := resolveCommit(t, dref.String(), dEnv)
-
-	h1, err := cm1.HashOf()
-	assert.NoError(t, err)
-
-	h2, err := cm2.HashOf()
-	assert.NoError(t, err)
-	assert.NotEqual(t, h1, h2)
-
-	tblNames, _, err := dEnv.MergeWouldStompChanges(context.Background(), cm2)
-	if err != nil {
-		return err
-	}
-	if len(tblNames) != 0 {
-		return errhand.BuildDError("error: failed to determine mergability.").AddCause(err).Build()
-	}
-
-	if ok, err := cm1.CanFastForwardTo(context.Background(), cm2); ok {
-		if err != nil {
-			return err
-		}
-
-		rv, err := cm2.GetRootValue()
-		assert.NoError(t, err)
-
-		h, err := dEnv.DoltDB.WriteRootValue(context.Background(), rv)
-		assert.NoError(t, err)
-
-		err = dEnv.DoltDB.FastForward(context.Background(), dEnv.RepoState.CWBHeadRef(), cm2)
-		if err != nil {
-			return err
-		}
-
-		dEnv.RepoState.Working = h.String()
-		dEnv.RepoState.Staged = h.String()
-		err = dEnv.RepoState.Save(dEnv.FS)
-		assert.NoError(t, err)
-
-		err = actions.SaveTrackedDocsFromWorking(context.Background(), dEnv)
-		assert.NoError(t, err)
-
-	} else {
-		mergedRoot, tblToStats, err := merge.MergeCommits(context.Background(), cm1, cm2)
-		require.NoError(t, err)
-		for _, stats := range tblToStats {
-			require.True(t, stats.Conflicts == 0)
-		}
-
-		h2, err := cm2.HashOf()
-		require.NoError(t, err)
-
-		err = dEnv.RepoState.StartMerge(h2.String(), dEnv.FS)
-		if err != nil {
-			return err
-		}
-
-		err = dEnv.UpdateWorkingRoot(context.Background(), mergedRoot)
-		if err != nil {
-			return err
-		}
-
-		err = actions.SaveTrackedDocsFromWorking(context.Background(), dEnv)
-		if err != nil {
-			return err
-		}
-
-		_, err = dEnv.UpdateStagedRoot(context.Background(), mergedRoot)
-		if err != nil {
-			return err
-		}
+	mrg := commands.MergeCmd{}
+	code := mrg.Exec(context.Background(), mrg.Name(), []string{m.BranchName}, dEnv)
+	if code != 0 {
+		return fmt.Errorf("merge error")
 	}
 	return nil
 }

@@ -16,14 +16,12 @@ package diff
 
 import (
 	"context"
-	"sort"
-	"fmt"
-
 	"github.com/dolthub/dolt/go/libraries/doltcore/doltdb"
 	"github.com/dolthub/dolt/go/libraries/doltcore/env"
 	"github.com/dolthub/dolt/go/libraries/doltcore/schema"
 	"github.com/dolthub/dolt/go/store/hash"
 	"github.com/dolthub/dolt/go/store/types"
+	"sort"
 )
 
 type TableDiffType int
@@ -202,12 +200,6 @@ func GetStagedUnstagedTableDeltas(ctx context.Context, dEnv *env.DoltEnv) (stage
 	if err != nil {
 		return nil, nil, RootValueUnreadable{WorkingRoot, err}
 	}
-
-	wh, _ := workingRoot.HashOf()
-	whs := wh.String()
-	sh, _ := stagedRoot.HashOf()
-	shs := sh.String()
-	fmt.Println(whs, shs)
 
 	staged, err = GetTableDeltas(ctx, headRoot, stagedRoot)
 	if err != nil {

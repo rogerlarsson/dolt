@@ -24,32 +24,48 @@ import (
 )
 
 func CheckoutAllTables(ctx context.Context, dEnv *env.DoltEnv) error {
-	roots, err := getRoots(ctx, dEnv, WorkingRoot, StagedRoot, HeadRoot)
-
+	staged, err := dEnv.StagedRoot(ctx)
 	if err != nil {
 		return err
 	}
 
-	tbls, err := doltdb.UnionTableNames(ctx, roots[WorkingRoot], roots[StagedRoot], roots[HeadRoot])
-
+	tables, err := staged.GetTableNames(ctx)
 	if err != nil {
 		return err
 	}
 
-	docs := *env.AllValidDocDetails
+	docs, err := doltdb.GetDocNames(ctx, staged)
+	if err != nil {
+		return err
+	}
 
-	return checkoutTablesAndDocs(ctx, dEnv, roots, tbls, docs)
-
+	return CheckoutTablesAndDocs(ctx, dEnv, append(tables, docs...)...)
 }
 
-func CheckoutTablesAndDocs(ctx context.Context, dEnv *env.DoltEnv, tbls []string, docs []doltdb.DocDetails) error {
-	roots, err := getRoots(ctx, dEnv, WorkingRoot, StagedRoot, HeadRoot)
-
+func CheckoutTablesAndDocs(ctx context.Context, dEnv *env.DoltEnv, names ...string) error {
+	staged, working, err := getStagedAndWorking(ctx, dEnv)
 	if err != nil {
 		return err
 	}
 
-	return checkoutTablesAndDocs(ctx, dEnv, roots, tbls, docs)
+	tables, docs := splitTablesAndDocs(names)
+
+	err = validateTablesExist(ctx, staged, tables)
+	if err != nil {
+		return err
+	}
+
+	working, err = checkoutTables(ctx, working, staged, tables...)
+	if err != nil {
+		return err
+	}
+
+	working, err = checkoutDocs(ctx, working, staged, docs...)
+	if err != nil {
+		return err
+	}
+
+	return saveRepoState(ctx, dEnv, working, staged)
 }
 
 // MoveTablesBetweenRoots copies tables with names in tbls from the src RootValue to the dest RootValue.
@@ -127,77 +143,49 @@ func MoveTablesBetweenRoots(ctx context.Context, tbls []string, src, dest *doltd
 	return dest, nil
 }
 
-func checkoutTablesAndDocs(ctx context.Context, dEnv *env.DoltEnv, roots map[RootType]*doltdb.RootValue, tbls []string, docs []doltdb.DocDetails) error {
-	unknownTbls := []string{}
+// MoveDocsBetweenRoots copies DoltDocs with names in |docs| from the src RootValue to the dest RootValue.
+func MoveDocsBetweenRoots(ctx context.Context, docs []string, src, dest *doltdb.RootValue) (*doltdb.RootValue, error) {
+	docSet := set.NewStrSet(docs)
 
-	currRoot := roots[WorkingRoot]
-	staged := roots[StagedRoot]
-	head := roots[HeadRoot]
-
-	if len(docs) > 0 {
-		currRootWithDocs, stagedWithDocs, err := getUpdatedWorkingAndStagedWithDocs(ctx, dEnv, currRoot, staged, head, docs)
-		if err != nil {
-			return err
-		}
-		currRoot = currRootWithDocs
-		staged = stagedWithDocs
+	docDeltas, err := diff.GetDocDeltas(ctx, dest, src)
+	if err != nil {
+		return nil, err
 	}
 
-	for _, tblName := range tbls {
-		if tblName == doltdb.DocTableName {
+	puts := make(map[string]string)
+	drops := set.NewStrSet(nil)
+
+	for _, dd := range docDeltas {
+		if !docSet.Contains(dd.Name) {
 			continue
 		}
-		tbl, ok, err := staged.GetTable(ctx, tblName)
 
-		if err != nil {
-			return err
-		}
-
-		if !ok {
-			tbl, ok, err = head.GetTable(ctx, tblName)
-
-			if err != nil {
-				return err
-			}
-
-			if !ok {
-				unknownTbls = append(unknownTbls, tblName)
-				continue
-			}
-		}
-
-		currRoot, err = currRoot.PutTable(ctx, tblName, tbl)
-
-		if err != nil {
-			return err
+		if dd.IsDrop() {
+			drops.Add(dd.Name)
+		} else {
+			puts[dd.Name] = *dd.ToText
 		}
 	}
 
-	if len(unknownTbls) > 0 {
-		// Return table not exist error before RemoveTables, which fails silently if the table is not on the root.
-		err := validateTablesExist(ctx, currRoot, unknownTbls)
-		if err != nil {
-			return err
-		}
-
-		currRoot, err = currRoot.RemoveTables(ctx, unknownTbls...)
-
-		if err != nil {
-			return err
-		}
-	}
-
-	err := dEnv.UpdateWorkingRoot(ctx, currRoot)
+	dest, err = doltdb.RemoveDocs(ctx, drops, dest)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return SaveDocsFromDocDetails(dEnv, docs)
+	return doltdb.PutDocs(ctx, puts, dest)
 }
 
-func validateTablesExist(ctx context.Context, currRoot *doltdb.RootValue, unknown []string) error {
-	notExist := []string{}
-	for _, tbl := range unknown {
+func checkoutTables(ctx context.Context, working, staged *doltdb.RootValue, tables ...string) (*doltdb.RootValue, error) {
+	return MoveTablesBetweenRoots(ctx, tables, staged, working)
+}
+
+func checkoutDocs(ctx context.Context,  working, staged *doltdb.RootValue, docs ...string) (*doltdb.RootValue, error) {
+	return MoveDocsBetweenRoots(ctx, docs, staged, working)
+}
+
+func validateTablesExist(ctx context.Context, currRoot *doltdb.RootValue, names []string) error {
+	var notExist []string
+	for _, tbl := range names {
 		if has, err := currRoot.HasTable(ctx, tbl); err != nil {
 			return err
 		} else if !has {

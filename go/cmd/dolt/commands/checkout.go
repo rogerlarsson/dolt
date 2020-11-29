@@ -121,13 +121,7 @@ func (cmd CheckoutCmd) Exec(ctx context.Context, commandStr string, args []strin
 		return HandleVErrAndExitCode(verr, usagePrt)
 	}
 
-	tbls, docs, err := actions.GetTblsAndDocDetails(dEnv, args)
-	if err != nil {
-		verr := errhand.BuildDError("error: unable to parse arguments.").AddCause(err).Build()
-		return HandleVErrAndExitCode(verr, usagePrt)
-	}
-
-	verr := checkoutTablesAndDocs(ctx, dEnv, tbls, docs)
+	verr := checkoutTablesAndDocs(ctx, dEnv, args...)
 
 	if verr != nil && apr.NArg() == 1 {
 		verr = checkoutRemoteBranch(ctx, dEnv, name)
@@ -189,8 +183,8 @@ func checkoutNewBranch(ctx context.Context, dEnv *env.DoltEnv, newBranch string,
 	return checkoutBranch(ctx, dEnv, newBranch)
 }
 
-func checkoutTablesAndDocs(ctx context.Context, dEnv *env.DoltEnv, tables []string, docs []doltdb.DocDetails) errhand.VerboseError {
-	err := actions.CheckoutTablesAndDocs(ctx, dEnv, tables, docs)
+func checkoutTablesAndDocs(ctx context.Context, dEnv *env.DoltEnv, names ...string) errhand.VerboseError {
+	err := actions.CheckoutTablesAndDocs(ctx, dEnv, names...)
 
 	if err != nil {
 		if actions.IsRootValUnreachable(err) {

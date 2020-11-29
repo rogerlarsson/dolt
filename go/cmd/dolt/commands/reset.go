@@ -205,7 +205,7 @@ func printNotStaged(ctx context.Context, dEnv *env.DoltEnv) {
 		return
 	}
 
-	notStagedDocs, err := diff.NewDocDiffs(ctx, working, nil, nil)
+	_, notStagedDocs, err := diff.GetDocDiffs(ctx, dEnv)
 	if err != nil {
 		return
 	}
