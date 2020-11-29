@@ -92,102 +92,55 @@ func (cmd ResetCmd) Exec(ctx context.Context, commandStr string, args []string, 
 		return HandleDocTableVErrAndExitCode()
 	}
 
-	workingRoot, stagedRoot, headRoot, verr := getAllRoots(ctx, dEnv)
-
-	if verr == nil {
-		if apr.ContainsAll(HardResetParam, SoftResetParam) {
-			verr = errhand.BuildDError("error: --%s and --%s are mutually exclusive options.", HardResetParam, SoftResetParam).Build()
-		} else if apr.Contains(HardResetParam) {
-			verr = resetHard(ctx, dEnv, apr, workingRoot, stagedRoot, headRoot)
-		} else {
-			verr = resetSoft(ctx, dEnv, apr, stagedRoot, headRoot)
-		}
+	var verr errhand.VerboseError
+	if apr.ContainsAll(HardResetParam, SoftResetParam) {
+		verr = errhand.BuildDError("error: --%s and --%s are mutually exclusive options.", HardResetParam, SoftResetParam).Build()
+	} else if apr.Contains(HardResetParam) {
+		verr = resetHard(ctx, dEnv, apr)
+	} else {
+		verr = resetSoft(ctx, dEnv, apr)
 	}
 
 	return HandleVErrAndExitCode(verr, usage)
 }
 
-func resetHard(ctx context.Context, dEnv *env.DoltEnv, apr *argparser.ArgParseResults, workingRoot, stagedRoot, headRoot *doltdb.RootValue) errhand.VerboseError {
+func resetHard(ctx context.Context, dEnv *env.DoltEnv, apr *argparser.ArgParseResults) errhand.VerboseError {
 	if apr.NArg() > 1 {
 		return errhand.BuildDError("--%s supports at most one additional param", HardResetParam).SetPrintUsage().Build()
 	}
 
-	var newHead *doltdb.Commit
-	if apr.NArg() == 1 {
-		cs, err := doltdb.NewCommitSpec(apr.Arg(0))
+	err := func() error {
+		headRoot, err := dEnv.HeadRoot(ctx)
 		if err != nil {
-			return errhand.VerboseErrorFromError(err)
+			return err
 		}
 
-		newHead, err = dEnv.DoltDB.Resolve(ctx, cs, dEnv.RepoState.CWBHeadRef())
-		if err != nil {
-			return errhand.VerboseErrorFromError(err)
+		if apr.NArg() == 1 {
+			cs, err := doltdb.NewCommitSpec(apr.Arg(0))
+			if err != nil {
+				return err
+			}
+
+			newHead, err := dEnv.DoltDB.Resolve(ctx, cs, dEnv.RepoState.CWBHeadRef())
+			if err != nil {
+				return err
+			}
+
+			err = dEnv.DoltDB.SetHeadToCommit(ctx, dEnv.RepoState.CWBHeadRef(), newHead)
+			if err != nil {
+				return err
+			}
+
+			headRoot, err = newHead.GetRootValue()
+			if err != nil {
+				return err
+			}
 		}
 
-		headRoot, err = newHead.GetRootValue()
-		if err != nil {
-			return errhand.VerboseErrorFromError(err)
-		}
-	}
-
-	// need to save the state of files that aren't tracked
-	untrackedTables := make(map[string]*doltdb.Table)
-	wTblNames, err := workingRoot.GetTableNames(ctx)
-
+		return actions.ResetHard(ctx, dEnv, headRoot)
+	}()
 	if err != nil {
-		return errhand.BuildDError("error: failed to read tables from the working set").AddCause(err).Build()
-	}
-
-	for _, tblName := range wTblNames {
-		untrackedTables[tblName], _, err = workingRoot.GetTable(ctx, tblName)
-
-		if err != nil {
-			return errhand.BuildDError("error: failed to read '%s' from the working set", tblName).AddCause(err).Build()
-		}
-	}
-
-	headTblNames, err := stagedRoot.GetTableNames(ctx)
-
-	if err != nil {
-		return errhand.BuildDError("error: failed to read tables from head").AddCause(err).Build()
-	}
-
-	for _, tblName := range headTblNames {
-		delete(untrackedTables, tblName)
-	}
-
-	newWkRoot := headRoot
-	for tblName, tbl := range untrackedTables {
-		if tblName != doltdb.DocTableName {
-			newWkRoot, err = newWkRoot.PutTable(ctx, tblName, tbl)
-		}
-		if err != nil {
-			return errhand.BuildDError("error: failed to write table back to database").Build()
-		}
-	}
-
-	// TODO: update working and staged in one repo_state write.
-	err = dEnv.UpdateWorkingRoot(ctx, newWkRoot)
-
-	if err != nil {
-		return errhand.BuildDError("error: failed to update the working tables.").AddCause(err).Build()
-	}
-
-	_, err = dEnv.UpdateStagedRoot(ctx, headRoot)
-
-	if err != nil {
-		return errhand.BuildDError("error: failed to update the staged tables.").AddCause(err).Build()
-	}
-
-	err = actions.SaveTrackedDocsFromWorking(ctx, dEnv)
-	if err != nil {
-		return errhand.BuildDError("error: failed to update docs on the filesystem.").AddCause(err).Build()
-	}
-
-	if newHead != nil {
-		if err = dEnv.DoltDB.SetHeadToCommit(ctx, dEnv.RepoState.CWBHeadRef(), newHead); err != nil {
-			return errhand.VerboseErrorFromError(err)
-		}
+		return errhand.VerboseErrorFromError(err)
 	}
 
 	return nil
@@ -204,66 +157,45 @@ func RemoveDocsTbl(tbls []string) []string {
 	return result
 }
 
-func resetSoft(ctx context.Context, dEnv *env.DoltEnv, apr *argparser.ArgParseResults, stagedRoot, headRoot *doltdb.RootValue) errhand.VerboseError {
-	tbls := apr.Args()
+func resetSoft(ctx context.Context, dEnv *env.DoltEnv, apr *argparser.ArgParseResults) errhand.VerboseError {
+	err := func() error {
+		tables := apr.Args()
 
-	if len(tbls) == 0 || (len(tbls) == 1 && tbls[0] == ".") {
-		var err error
-		tbls, err = doltdb.UnionTableNames(ctx, stagedRoot, headRoot)
+		if len(tables) == 0 || (len(tables) == 1 && tables[0] == ".") {
+			stagedRoot, err := dEnv.StagedRoot(ctx)
+			if err != nil {
+				return err
+			}
 
-		if err != nil {
-			return errhand.BuildDError("error: failed to get all tables").AddCause(err).Build()
+			headRoot, err := dEnv.HeadRoot(ctx)
+			if err != nil {
+				return err
+			}
+
+			tables, err = doltdb.UnionTableNames(ctx, stagedRoot, headRoot)
+			if err != nil {
+				return err
+			}
 		}
-	}
 
-	tables, docs, err := actions.GetTblsAndDocDetails(dEnv, tbls)
+		return actions.ResetSoft(ctx, dEnv, tables)
+	}()
 	if err != nil {
-		return errhand.BuildDError("error: failed to get all tables").AddCause(err).Build()
+		return errhand.VerboseErrorFromError(err)
 	}
 
-	if len(docs) > 0 {
-		tables = RemoveDocsTbl(tables)
-	}
-
-	verr := ValidateTablesWithVErr(tables, stagedRoot, headRoot)
-
-	if verr != nil {
-		return verr
-	}
-
-	stagedRoot, err = resetDocs(ctx, dEnv, headRoot, docs)
-	if err != nil {
-		return errhand.BuildDError("error: failed to reset docs").AddCause(err).Build()
-	}
-
-	stagedRoot, verr = resetStaged(ctx, dEnv, tables, stagedRoot, headRoot)
-
-	if verr != nil {
-		return verr
-	}
-
-	printNotStaged(ctx, dEnv, stagedRoot)
+	printNotStaged(ctx, dEnv)
 	return nil
 }
 
-func resetDocs(ctx context.Context, dEnv *env.DoltEnv, headRoot *doltdb.RootValue, docDetails env.Docs) (newStgRoot *doltdb.RootValue, err error) {
-	docs, err := dEnv.GetDocsWithNewerTextFromRoot(ctx, headRoot, docDetails)
-	if err != nil {
-		return nil, err
-	}
-
-	err = dEnv.PutDocsToWorking(ctx, docs)
-	if err != nil {
-		return nil, err
-	}
-
-	return dEnv.PutDocsToStaged(ctx, docs)
-}
-
-func printNotStaged(ctx context.Context, dEnv *env.DoltEnv, staged *doltdb.RootValue) {
+func printNotStaged(ctx context.Context, dEnv *env.DoltEnv) {
 	// Printing here is best effort.  Fail silently
 	working, err := dEnv.WorkingRoot(ctx)
+	if err != nil {
+		return
+	}
 
+	staged, err := dEnv.StagedRoot(ctx)
 	if err != nil {
 		return
 	}
@@ -273,7 +205,7 @@ func printNotStaged(ctx context.Context, dEnv *env.DoltEnv, staged *doltdb.RootV
 		return
 	}
 
-	notStagedDocs, err := diff.NewDocDiffs(ctx, dEnv, working, nil, nil)
+	notStagedDocs, err := diff.NewDocDiffs(ctx, working, nil, nil)
 	if err != nil {
 		return
 	}
@@ -314,35 +246,3 @@ func printNotStaged(ctx context.Context, dEnv *env.DoltEnv, staged *doltdb.RootV
 	}
 }
 
-func resetStaged(ctx context.Context, dEnv *env.DoltEnv, tbls []string, staged, head *doltdb.RootValue) (*doltdb.RootValue, errhand.VerboseError) {
-	updatedRoot, err := actions.MoveTablesBetweenRoots(ctx, tbls, head, staged)
-
-	if err != nil {
-		tt := strings.Join(tbls, ", ")
-		return nil, errhand.BuildDError("error: failed to unstage tables: %s", tt).AddCause(err).Build()
-	}
-
-	return updatedRoot, UpdateStagedWithVErr(dEnv, updatedRoot)
-}
-
-func getAllRoots(ctx context.Context, dEnv *env.DoltEnv) (*doltdb.RootValue, *doltdb.RootValue, *doltdb.RootValue, errhand.VerboseError) {
-	workingRoot, err := dEnv.WorkingRoot(ctx)
-
-	if err != nil {
-		return nil, nil, nil, errhand.BuildDError("Unable to get staged.").AddCause(err).Build()
-	}
-
-	stagedRoot, err := dEnv.StagedRoot(ctx)
-
-	if err != nil {
-		return nil, nil, nil, errhand.BuildDError("Unable to get staged.").AddCause(err).Build()
-	}
-
-	headRoot, err := dEnv.HeadRoot(ctx)
-
-	if err != nil {
-		return nil, nil, nil, errhand.BuildDError("Unable to get at HEAD.").AddCause(err).Build()
-	}
-
-	return workingRoot, stagedRoot, headRoot, nil
-}

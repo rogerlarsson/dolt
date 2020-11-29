@@ -21,7 +21,6 @@ import (
 	"strconv"
 	"strings"
 
-	textdiff "github.com/andreyvit/diff"
 	humanize "github.com/dustin/go-humanize"
 	"github.com/fatih/color"
 
@@ -31,7 +30,6 @@ import (
 	"github.com/dolthub/dolt/go/libraries/doltcore/diff"
 	"github.com/dolthub/dolt/go/libraries/doltcore/doltdb"
 	"github.com/dolthub/dolt/go/libraries/doltcore/env"
-	"github.com/dolthub/dolt/go/libraries/doltcore/env/actions"
 	"github.com/dolthub/dolt/go/libraries/doltcore/row"
 	"github.com/dolthub/dolt/go/libraries/doltcore/rowconv"
 	"github.com/dolthub/dolt/go/libraries/doltcore/schema"
@@ -169,7 +167,7 @@ func (cmd DiffCmd) Exec(ctx context.Context, commandStr string, args []string, d
 		return HandleVErrAndExitCode(verr, usage)
 	}
 
-	err = diffDoltDocs(ctx, dEnv, fromRoot, toRoot, dArgs)
+	err = diff.DiffDoltDocs(ctx, iohelp.NopWrCloser(cli.CliOut), fromRoot, toRoot, dArgs.docSet)
 
 	if err != nil {
 		verr = errhand.BuildDError("error diffing dolt docs").AddCause(err).Build()
@@ -852,94 +850,6 @@ func createSplitter(fromSch schema.Schema, toSch schema.Schema, joiner *rowconv.
 
 	ds := diff.NewDiffSplitter(joiner, oldToUnionConv, newToUnionConv)
 	return unionSch, ds, nil
-}
-
-func diffDoltDocs(ctx context.Context, dEnv *env.DoltEnv, from, to *doltdb.RootValue, dArgs *diffArgs) error {
-	_, docDetails, err := actions.GetTblsAndDocDetails(dEnv, dArgs.docSet.AsSlice())
-
-	if err != nil {
-		return err
-	}
-
-	fromDocTable, _, err := from.GetTable(ctx, doltdb.DocTableName)
-
-	if err != nil {
-		return err
-	}
-
-	toDocTable, _, err := to.GetTable(ctx, doltdb.DocTableName)
-
-	if err != nil {
-		return err
-	}
-
-	printDocDiffs(ctx, dEnv, fromDocTable, toDocTable, docDetails)
-	return nil
-}
-
-func printDocDiffs(ctx context.Context, dEnv *env.DoltEnv, fromTbl, toTbl *doltdb.Table, docDetails []doltdb.DocDetails) {
-	bold := color.New(color.Bold)
-
-	if docDetails == nil {
-		docDetails, _ = dEnv.GetAllValidDocDetails()
-	}
-
-	for _, doc := range docDetails {
-		if toTbl != nil {
-			sch1, _ := toTbl.GetSchema(ctx)
-			doc, _ = doltdb.AddNewerTextToDocFromTbl(ctx, toTbl, &sch1, doc)
-
-		}
-		if fromTbl != nil {
-			sch2, _ := fromTbl.GetSchema(ctx)
-			doc, _ = doltdb.AddValueToDocFromTbl(ctx, fromTbl, &sch2, doc)
-		}
-
-		if doc.Value != nil {
-			newer := string(doc.NewerText)
-			older, _ := strconv.Unquote(doc.Value.HumanReadableString())
-			lines := textdiff.LineDiffAsLines(older, newer)
-			if doc.NewerText == nil {
-				printDeletedDoc(bold, doc.DocPk, lines)
-			} else if len(lines) > 0 && newer != older {
-				printModifiedDoc(bold, doc.DocPk, lines)
-			}
-		} else if doc.Value == nil && doc.NewerText != nil {
-			printAddedDoc(bold, doc.DocPk)
-		}
-	}
-}
-
-func printDiffLines(bold *color.Color, lines []string) {
-	for _, line := range lines {
-		if string(line[0]) == string("+") {
-			cli.Println(color.GreenString("+ " + line[1:]))
-		} else if string(line[0]) == ("-") {
-			cli.Println(color.RedString("- " + line[1:]))
-		} else {
-			cli.Println(" " + line)
-		}
-	}
-}
-
-func printModifiedDoc(bold *color.Color, pk string, lines []string) {
-	_, _ = bold.Printf("diff --dolt a/%[1]s b/%[1]s\n", pk)
-	_, _ = bold.Printf("--- a/%s\n", pk)
-	_, _ = bold.Printf("+++ b/%s\n", pk)
-
-	printDiffLines(bold, lines)
-}
-
-func printAddedDoc(bold *color.Color, pk string) {
-	_, _ = bold.Printf("diff --dolt a/%[1]s b/%[1]s\n", pk)
-	_, _ = bold.Println("added doc")
-}
-
-func printDeletedDoc(bold *color.Color, pk string, lines []string) {
-	_, _ = bold.Printf("diff --dolt a/%[1]s b/%[1]s\n", pk)
-	_, _ = bold.Println("deleted doc")
-
-	printDiffLines(bold, lines)
 }
 
 func printTableDiffSummary(td diff.TableDelta) {

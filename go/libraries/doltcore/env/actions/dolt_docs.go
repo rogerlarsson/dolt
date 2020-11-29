@@ -16,6 +16,7 @@ package actions
 
 import (
 	"context"
+	"github.com/dolthub/dolt/go/libraries/utils/set"
 
 	"github.com/dolthub/dolt/go/libraries/doltcore/diff"
 	"github.com/dolthub/dolt/go/libraries/doltcore/doltdb"
@@ -31,16 +32,6 @@ func SaveTrackedDocsFromWorking(ctx context.Context, dEnv *env.DoltEnv) error {
 	}
 
 	return SaveTrackedDocs(ctx, dEnv, workingRoot, workingRoot, localDocs)
-}
-
-// SaveDocsFromWorking saves docs from the working root to the filesystem, and could overwrite untracked docs.
-func SaveDocsFromWorking(ctx context.Context, dEnv *env.DoltEnv) error {
-	workingRoot, err := dEnv.WorkingRoot(ctx)
-	if err != nil {
-		return err
-	}
-
-	return SaveDocsFromRoot(ctx, workingRoot, dEnv)
 }
 
 // SaveDocsFromRoot saves docs from the root given to the filesystem, and could overwrite untracked docs.
@@ -59,7 +50,7 @@ func SaveDocsFromRoot(ctx context.Context, root *doltdb.RootValue, dEnv *env.Dol
 
 // SaveTrackedDocs writes the docs from the targetRoot to the filesystem. The working root is used to identify untracked docs, which are left unchanged.
 func SaveTrackedDocs(ctx context.Context, dEnv *env.DoltEnv, workRoot, targetRoot *doltdb.RootValue, localDocs env.Docs) error {
-	docDiffs, err := diff.NewDocDiffs(ctx, dEnv, workRoot, nil, localDocs)
+	docDiffs, err := diff.NewDocDiffs(ctx, workRoot, nil, localDocs)
 	if err != nil {
 		return err
 	}
@@ -100,18 +91,6 @@ func removeUntrackedDocs(docs []doltdb.DocDetails, docDiffs *diff.DocDiffs) []do
 		}
 	}
 	return result
-}
-
-func getUntrackedDocs(docs []doltdb.DocDetails, docDiffs *diff.DocDiffs) []string {
-	untracked := []string{}
-	for _, docName := range docDiffs.Docs {
-		dt := docDiffs.DocToType[docName]
-		if dt == diff.AddedDoc {
-			untracked = append(untracked, docName)
-		}
-	}
-
-	return untracked
 }
 
 func getUpdatedWorkingAndStagedWithDocs(ctx context.Context, dEnv *env.DoltEnv, working, staged, head *doltdb.RootValue, docDetails []doltdb.DocDetails) (currRoot, stgRoot *doltdb.RootValue, err error) {
@@ -181,3 +160,37 @@ func SaveDocsFromWorkingExcludingFSChanges(ctx context.Context, dEnv *env.DoltEn
 
 	return SaveTrackedDocs(ctx, dEnv, workingRoot, workingRoot, docsToSave)
 }
+
+
+// MoveDocsBetweenRoots copies DoltDocs with names in |docs| from the src RootValue to the dest RootValue.
+func MoveDocsBetweenRoots(ctx context.Context, docs []string, src, dest *doltdb.RootValue) (*doltdb.RootValue, error) {
+	docSet := set.NewStrSet(docs)
+
+	docDeltas, err := diff.GetDocDeltas(ctx, dest, src)
+	if err != nil {
+		return nil, err
+	}
+
+	puts := make(map[string]string)
+	drops := set.NewStrSet(nil)
+
+	for _, dd := range docDeltas {
+		if !docSet.Contains(dd.Name) {
+			continue
+		}
+
+		if dd.IsDrop() {
+			drops.Add(dd.Name)
+		} else {
+			puts[dd.Name] = *dd.ToText
+		}
+	}
+
+	dest, err = doltdb.RemoveDocs(ctx, drops, dest)
+	if err != nil {
+		return nil, err
+	}
+
+	return doltdb.PutDocs(ctx, puts, dest)
+}
+

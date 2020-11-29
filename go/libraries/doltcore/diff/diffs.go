@@ -17,6 +17,7 @@ package diff
 import (
 	"context"
 	"sort"
+	"fmt"
 
 	"github.com/dolthub/dolt/go/libraries/doltcore/doltdb"
 	"github.com/dolthub/dolt/go/libraries/doltcore/env"
@@ -33,22 +34,6 @@ const (
 	RenamedTable
 	RemovedTable
 )
-
-type DocDiffType int
-
-const (
-	AddedDoc DocDiffType = iota
-	ModifiedDoc
-	RemovedDoc
-)
-
-type DocDiffs struct {
-	NumAdded    int
-	NumModified int
-	NumRemoved  int
-	DocToType   map[string]DocDiffType
-	Docs        []string
-}
 
 type RootType int
 
@@ -82,92 +67,6 @@ type RootValueUnreadable struct {
 
 func (rvu RootValueUnreadable) Error() string {
 	return "error: Unable to read " + rvu.rootType.String()
-}
-
-// NewDocDiffs returns DocDiffs for Dolt Docs between two roots.
-func NewDocDiffs(ctx context.Context, dEnv *env.DoltEnv, older *doltdb.RootValue, newer *doltdb.RootValue, docDetails []doltdb.DocDetails) (*DocDiffs, error) {
-	var added []string
-	var modified []string
-	var removed []string
-	if older != nil {
-		if newer == nil {
-			a, m, r, err := older.DocDiff(ctx, nil, docDetails)
-			if err != nil {
-				return nil, err
-			}
-			added = a
-			modified = m
-			removed = r
-		} else {
-			a, m, r, err := older.DocDiff(ctx, newer, docDetails)
-			if err != nil {
-				return nil, err
-			}
-			added = a
-			modified = m
-			removed = r
-		}
-	}
-	var docs []string
-	docs = append(docs, added...)
-	docs = append(docs, modified...)
-	docs = append(docs, removed...)
-	sort.Strings(docs)
-
-	docsToType := make(map[string]DocDiffType)
-	for _, nt := range added {
-		docsToType[nt] = AddedDoc
-	}
-
-	for _, nt := range modified {
-		docsToType[nt] = ModifiedDoc
-	}
-
-	for _, nt := range removed {
-		docsToType[nt] = RemovedDoc
-	}
-
-	return &DocDiffs{len(added), len(modified), len(removed), docsToType, docs}, nil
-}
-
-// Len returns the number of docs in a DocDiffs
-func (nd *DocDiffs) Len() int {
-	return len(nd.Docs)
-}
-
-// GetDocDiffs retrieves staged and unstaged DocDiffs.
-func GetDocDiffs(ctx context.Context, dEnv *env.DoltEnv) (*DocDiffs, *DocDiffs, error) {
-	docDetails, err := dEnv.GetAllValidDocDetails()
-	if err != nil {
-		return nil, nil, err
-	}
-
-	workingRoot, err := dEnv.WorkingRoot(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	notStagedDocDiffs, err := NewDocDiffs(ctx, dEnv, workingRoot, nil, docDetails)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	headRoot, err := dEnv.HeadRoot(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	stagedRoot, err := dEnv.StagedRoot(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	stagedDocDiffs, err := NewDocDiffs(ctx, dEnv, headRoot, stagedRoot, nil)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return stagedDocDiffs, notStagedDocDiffs, nil
 }
 
 // TableDelta represents the change of a single table between two roots.
@@ -267,7 +166,7 @@ func GetTableDeltas(ctx context.Context, fromRoot, toRoot *doltdb.RootValue) (de
 		}
 
 		if ok {
-			delete(fromTableNames, pkTag) // consume table name
+			delete(fromTableNames, pkTag) // consume table Name
 		}
 
 		return false, nil
@@ -304,6 +203,12 @@ func GetStagedUnstagedTableDeltas(ctx context.Context, dEnv *env.DoltEnv) (stage
 		return nil, nil, RootValueUnreadable{WorkingRoot, err}
 	}
 
+	wh, _ := workingRoot.HashOf()
+	whs := wh.String()
+	sh, _ := stagedRoot.HashOf()
+	shs := sh.String()
+	fmt.Println(whs, shs)
+
 	staged, err = GetTableDeltas(ctx, headRoot, stagedRoot)
 	if err != nil {
 		return nil, nil, err
@@ -335,7 +240,7 @@ func (td TableDelta) IsRename() bool {
 	return td.FromName != td.ToName
 }
 
-// CurName returns the most recent name of the table.
+// CurName returns the most recent Name of the table.
 func (td TableDelta) CurName() string {
 	if td.ToName != "" {
 		return td.ToName

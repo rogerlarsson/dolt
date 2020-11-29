@@ -17,39 +17,47 @@ package actions
 import (
 	"context"
 	"errors"
-
 	"github.com/dolthub/dolt/go/libraries/doltcore/doltdb"
 	"github.com/dolthub/dolt/go/libraries/doltcore/env"
 )
 
 var ErrTablesInConflict = errors.New("table is in conflict")
 
-func StageTables(ctx context.Context, dEnv *env.DoltEnv, tbls []string) error {
-	tables, docDetails, err := GetTblsAndDocDetails(dEnv, tbls)
-	if err != nil {
-		return err
-	}
-
-	if len(docDetails) > 0 {
-		err = dEnv.PutDocsToWorking(ctx, docDetails)
-		if err != nil {
-			return err
-		}
-	}
+func StageTables(ctx context.Context, dEnv *env.DoltEnv, names []string) error {
+	tables, docs := splitTablesAndDocs(names)
 
 	staged, working, err := getStagedAndWorking(ctx, dEnv)
-
 	if err != nil {
 		return err
 	}
 
-	err = stageTables(ctx, dEnv, tables, staged, working)
+	staged, err = stageTables(ctx, working, staged, tables...)
 	if err != nil {
-		dEnv.ResetWorkingDocsToStagedDocs(ctx)
 		return err
 	}
-	return nil
+
+	staged, err = stageDocs(ctx, working, staged, docs...)
+	if err != nil {
+		return err
+	}
+
+	return saveRepoState(ctx, dEnv, working, staged)
 }
+
+func splitTablesAndDocs(names []string) (tbls, docs []string) {
+	for _, nm := range names {
+		if nm == doltdb.DocTableName {
+			continue
+		}
+		if doltdb.DocSet.Contains(nm) {
+			docs = append(docs, nm)
+		} else {
+			tbls = append(tbls, nm)
+		}
+	}
+	return
+}
+
 
 // GetTblsAndDocDetails takes a slice of strings where valid doc names are replaced with doc table name. Doc names are
 // appended to a docDetails slice. We return a tuple of tables, docDetails and error.
@@ -68,47 +76,53 @@ func GetTblsAndDocDetails(dEnv *env.DoltEnv, tbls []string) (tables []string, do
 }
 
 func StageAllTables(ctx context.Context, dEnv *env.DoltEnv) error {
-	err := dEnv.PutDocsToWorking(ctx, nil)
-	if err != nil {
-		return err
-	}
-
 	staged, working, err := getStagedAndWorking(ctx, dEnv)
-
 	if err != nil {
 		return err
 	}
 
-	tbls, err := doltdb.UnionTableNames(ctx, staged, working)
-
+	tbls, err := doltdb.UnionTableNames(ctx, working, staged)
 	if err != nil {
 		return err
 	}
 
-	err = stageTables(ctx, dEnv, tbls, staged, working)
+	staged, err = stageTables(ctx, working, staged, tbls...)
 	if err != nil {
-		dEnv.ResetWorkingDocsToStagedDocs(ctx)
 		return err
 	}
-	return nil
+
+	docs, err := doltdb.UnionDocNames(ctx, working, staged)
+	if err != nil {
+		return err
+	}
+
+	staged, err = stageDocs(ctx, working, staged, docs...)
+	if err != nil {
+		return err
+	}
+
+	return saveRepoState(ctx, dEnv, working, staged)
 }
 
-func stageTables(ctx context.Context, dEnv *env.DoltEnv, tbls []string, staged *doltdb.RootValue, working *doltdb.RootValue) error {
+func stageTables(ctx context.Context, working, staged *doltdb.RootValue, tbls ...string) (*doltdb.RootValue, error) {
 	err := ValidateTables(ctx, tbls, staged, working)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	working, err = checkTablesForConflicts(ctx, tbls, working)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	staged, err = MoveTablesBetweenRoots(ctx, tbls, working, staged)
-	if err != nil {
-		return err
-	}
+	return MoveTablesBetweenRoots(ctx, tbls, working, staged)
+}
 
+func stageDocs(ctx context.Context, working, staged *doltdb.RootValue, docs ...string) (*doltdb.RootValue, error) {
+	return MoveDocsBetweenRoots(ctx, docs, working, staged)
+}
+
+func saveRepoState(ctx context.Context, dEnv *env.DoltEnv, working, staged *doltdb.RootValue) error {
 	if wh, err := dEnv.DoltDB.WriteRootValue(ctx, working); err == nil {
 		if sh, err := dEnv.DoltDB.WriteRootValue(ctx, staged); err == nil {
 			dEnv.RepoState.Staged = sh.String()

@@ -23,11 +23,11 @@ import (
 )
 
 const (
-	// DiffTypeProp is the name of a property added to each split row which tells if its added, removed, the modified
+	// DiffTypeProp is the Name of a property added to each split row which tells if its added, removed, the modified
 	// old value, or the new value after modification
 	DiffTypeProp = "difftype"
 
-	// CollChangesProp is the name of a property added to each modified row which is a map from collumn name to the
+	// CollChangesProp is the Name of a property added to each modified row which is a map from collumn Name to the
 	// type of change.
 	CollChangesProp = "collchanges"
 )
