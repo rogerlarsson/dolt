@@ -21,88 +21,17 @@ import (
 	"github.com/dolthub/dolt/go/libraries/utils/filesys"
 )
 
-type Docs []doltdb.DocDetails
-
-// AllValidDocDetails is a list of all valid docs with static fields DocPk and File. All other DocDetail fields
-// are dynamic and must be added, modified or removed as needed.
-var AllValidDocDetails = &Docs{
-	doltdb.DocDetails{DocPk: doltdb.ReadmePk, File: ReadmeFile},
-	doltdb.DocDetails{DocPk: doltdb.LicensePk, File: LicenseFile},
-}
-
 var validDocs = map[string]string{
 	doltdb.ReadmePk: ReadmeFile,
 	doltdb.LicensePk: LicenseFile,
 }
 
-
-func LoadDocs(fs filesys.ReadWriteFS) (Docs, error) {
-	docsWithCurrentText := *AllValidDocDetails
-	for i, val := range docsWithCurrentText {
-		path := getDocFile(val.File)
-		exists, isDir := fs.Exists(path)
-		if exists && !isDir {
-			data, err := fs.ReadFile(path)
-			if err != nil {
-				return nil, err
-			}
-			val.NewerText = data
-			docsWithCurrentText[i] = val
-		}
-	}
-	return docsWithCurrentText, nil
-}
-
-func (docs Docs) Save(fs filesys.ReadWriteFS) error {
-	for _, doc := range docs {
-		if !IsValidDoc(doc.DocPk) {
-			continue
-		}
-		filePath := getDocFile(doc.File)
-		if doc.NewerText != nil {
-			err := fs.WriteFile(filePath, doc.NewerText)
-			if err != nil {
-				return err
-			}
-		} else {
-			err := DeleteDoc(fs, doc.DocPk)
-			if err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func DeleteDoc(fs filesys.ReadWriteFS, docName string) error {
-	for _, doc := range *AllValidDocDetails {
-		if doc.DocPk == docName {
-			path := getDocFile(doc.File)
-			exists, isDir := fs.Exists(path)
-			if exists && !isDir {
-				return fs.DeleteFile(path)
-			}
-		}
-	}
-	return nil
-}
-
-func IsValidDoc(docName string) bool {
-	for _, doc := range *AllValidDocDetails {
-		if doc.DocPk == docName {
-			return true
-		}
-	}
-	return false
-}
-
-func hasDocFile(fs filesys.ReadWriteFS, file string) bool {
-	exists, isDir := fs.Exists(getDocFile(file))
-	return exists && !isDir
-}
-
-
 func SyncDocsFromFS(ctx context.Context, dEnv *DoltEnv) error {
+	// check if initialized
+	if !dEnv.HasDoltDataDir() {
+		return nil
+	}
+
 	docs, err := readDocs(dEnv.FS)
 	if err != nil {
 		return err
@@ -139,6 +68,11 @@ func readDocs(fs filesys.ReadableFS) (docs map[string]string, err error) {
 }
 
 func SyncDocsToFS(ctx context.Context, dEnv *DoltEnv) error {
+	// check if initialized
+	if !dEnv.HasDoltDataDir() {
+		return nil
+	}
+
 	working, err := dEnv.WorkingRoot(ctx)
 	if err != nil {
 		return err
