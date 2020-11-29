@@ -18,18 +18,10 @@ import (
 	"context"
 
 	"github.com/dolthub/dolt/go/libraries/doltcore/doltdb"
-	"github.com/dolthub/dolt/go/libraries/doltcore/schema"
 	"github.com/dolthub/dolt/go/libraries/utils/filesys"
-	"github.com/dolthub/dolt/go/store/types"
 )
 
 type Docs []doltdb.DocDetails
-
-var doltDocsColumns, _ = schema.NewColCollection(
-	schema.NewColumn(doltdb.DocPkColumnName, doltdb.DocNameTag, types.StringKind, true, schema.NotNullConstraint{}),
-	schema.NewColumn(doltdb.DocTextColumnName, doltdb.DocTextTag, types.StringKind, false),
-)
-var DoltDocsSchema = schema.MustSchemaFromCols(doltDocsColumns)
 
 // AllValidDocDetails is a list of all valid docs with static fields DocPk and File. All other DocDetail fields
 // are dynamic and must be added, modified or removed as needed.

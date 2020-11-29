@@ -212,7 +212,7 @@ func runMain() int {
 	defer tempfiles.MovableTempFileProvider.Clean()
 
 	if err = env.SyncDocsFromFS(ctx, dEnv); err != nil {
-		cli.PrintErrln("Failed to sync dolt docs from file system. %v", err)
+		cli.PrintErrln(color.RedString("Failed to sync dolt docs from file system. %v", err))
 		return 1
 	}
 
@@ -224,7 +224,7 @@ func runMain() int {
 	}
 
 	if err = env.SyncDocsToFS(ctx, dEnv); err != nil {
-		cli.PrintErrln("Failed to sync dolt docs to file system. %v", err)
+		cli.PrintErrln(color.RedString("Failed to sync dolt docs to file system. %v", err))
 		return 1
 	}
 

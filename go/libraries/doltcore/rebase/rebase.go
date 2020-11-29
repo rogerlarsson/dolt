@@ -129,7 +129,12 @@ func rebaseRefs(ctx context.Context, dEnv *env.DoltEnv, replay ReplayCommitFn, n
 	ddb := dEnv.DoltDB
 	cwbRef := dEnv.RepoState.CWBHeadRef()
 
-	dd, err := dEnv.GetAllValidDocDetails()
+	root, err := dEnv.HeadRoot(ctx)
+	if err != nil {
+		return err
+	}
+
+	docs, err := doltdb.ReadDocs(ctx, root)
 	if err != nil {
 		return err
 	}
@@ -176,23 +181,17 @@ func rebaseRefs(ctx context.Context, dEnv *env.DoltEnv, replay ReplayCommitFn, n
 		return err
 	}
 
+	r, err = doltdb.PutDocs(ctx, docs, r)
+	if err != nil {
+		return err
+	}
+
 	_, err = dEnv.UpdateStagedRoot(ctx, r)
 	if err != nil {
 		return err
 	}
 
-	err = dEnv.UpdateWorkingRoot(ctx, r)
-	if err != nil {
-		return err
-	}
-
-	err = dEnv.PutDocsToWorking(ctx, dd)
-	if err != nil {
-		return err
-	}
-
-	_, err = dEnv.PutDocsToStaged(ctx, dd)
-	return err
+	return dEnv.UpdateWorkingRoot(ctx, r)
 }
 
 func rebase(ctx context.Context, ddb *doltdb.DoltDB, replay ReplayCommitFn, nerf NeedsRebaseFn, origins ...*doltdb.Commit) ([]*doltdb.Commit, error) {

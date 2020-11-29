@@ -92,10 +92,6 @@ func TestNonRepoDir(t *testing.T) {
 	if dEnv.RSLoadErr == nil {
 		t.Error("File doesn't exist.  There should be an error if the directory doesn't exist.")
 	}
-
-	if dEnv.DocsLoadErr != nil {
-		t.Error("There shouldn't be an error if the directory doesn't exist.")
-	}
 }
 
 func TestRepoDir(t *testing.T) {
@@ -111,10 +107,6 @@ func TestRepoDir(t *testing.T) {
 
 	if dEnv.RSLoadErr != nil {
 		t.Error("Repostate should be valid for an initialized directory")
-	}
-
-	if dEnv.DocsLoadErr != nil {
-		t.Error("Docs should be valid for an initialized directory")
 	}
 
 	if un, err := dEnv.Config.GetString("user.name"); err != nil || un != "bheni" {
@@ -137,10 +129,6 @@ func TestRepoDirNoLocal(t *testing.T) {
 
 	if dEnv.RSLoadErr != nil {
 		t.Error("File doesn't exist.  There should be an error if the directory doesn't exist.")
-	}
-
-	if dEnv.DocsLoadErr != nil {
-		t.Error("Files don't exist.  There should be an error if the directory doesn't exist.")
 	}
 
 	err := dEnv.Config.CreateLocalConfig(map[string]string{"user.name": "bheni"})

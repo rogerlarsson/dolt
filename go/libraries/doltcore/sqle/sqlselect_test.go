@@ -25,7 +25,6 @@ import (
 
 	"github.com/dolthub/dolt/go/libraries/doltcore/doltdb"
 	"github.com/dolthub/dolt/go/libraries/doltcore/dtestutils"
-	"github.com/dolthub/dolt/go/libraries/doltcore/env"
 	"github.com/dolthub/dolt/go/libraries/doltcore/envtestutils"
 	"github.com/dolthub/dolt/go/libraries/doltcore/row"
 	"github.com/dolthub/dolt/go/libraries/doltcore/schema"
@@ -1463,15 +1462,15 @@ var systemTableSelectTests = []SelectTest{
 	{
 		Name: "select from dolt_docs",
 		AdditionalSetup: CreateTableFn("dolt_docs",
-			env.DoltDocsSchema,
-			NewRowWithSchema(env.DoltDocsSchema,
+			doltdb.DoltDocsSchema,
+			NewRowWithSchema(doltdb.DoltDocsSchema,
 				types.String("LICENSE.md"),
 				types.String("A license")),
 		),
 		Query: "select * from dolt_docs",
-		ExpectedRows: ToSqlRows(CompressSchema(env.DoltDocsSchema),
+		ExpectedRows: ToSqlRows(CompressSchema(doltdb.DoltDocsSchema),
 			NewRow(types.String("LICENSE.md"), types.String("A license"))),
-		ExpectedSchema: CompressSchema(env.DoltDocsSchema),
+		ExpectedSchema: CompressSchema(doltdb.DoltDocsSchema),
 	},
 	{
 		Name: "select from dolt_query_catalog",

@@ -145,9 +145,6 @@ func MaybeMigrateEnv(ctx context.Context, dEnv *env.DoltEnv) (*env.DoltEnv, erro
 	if tmp.RSLoadErr != nil {
 		return nil, tmp.RSLoadErr
 	}
-	if tmp.DocsLoadErr != nil {
-		return nil, tmp.DocsLoadErr
-	}
 	if tmp.DBLoadError != nil {
 		return nil, tmp.DBLoadError
 	}
