@@ -128,6 +128,7 @@ func CurrentBranchByRoot(ctx context.Context, dEnv *env.DoltEnv, replay ReplayRo
 func rebaseRefs(ctx context.Context, dEnv *env.DoltEnv, replay ReplayCommitFn, nerf NeedsRebaseFn, refs ...ref.DoltRef) error {
 	ddb := dEnv.DoltDB
 	cwbRef := dEnv.RepoState.CWBHeadRef()
+
 	dd, err := dEnv.GetAllValidDocDetails()
 	if err != nil {
 		return err

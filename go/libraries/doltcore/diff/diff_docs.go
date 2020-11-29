@@ -46,49 +46,33 @@ type DocDiffs struct {
 
 
 // NewDocDiffs returns DocDiffs for Dolt Docs between two roots.
-func NewDocDiffs(ctx context.Context, older *doltdb.RootValue, newer *doltdb.RootValue, docDetails []doltdb.DocDetails) (*DocDiffs, error) {
-	var added []string
-	var modified []string
-	var removed []string
-	if older != nil {
-		if newer == nil {
-			a, m, r, err := older.DocDiff(ctx, nil, docDetails)
-			if err != nil {
-				return nil, err
-			}
-			added = a
-			modified = m
-			removed = r
-		} else {
-			a, m, r, err := older.DocDiff(ctx, newer, docDetails)
-			if err != nil {
-				return nil, err
-			}
-			added = a
-			modified = m
-			removed = r
+func NewDocDiffs(ctx context.Context, from, to *doltdb.RootValue) (*DocDiffs, error) {
+	diffs := DocDiffs{
+		DocToType: make(map[string]DocDiffType),
+	}
+
+	deltas, err := GetDocDeltas(ctx, from, to)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, dd := range deltas {
+		switch {
+		case dd.IsAdd():
+			diffs.DocToType[dd.Name] = AddedDoc
+			diffs.NumAdded++
+		case dd.IsDrop():
+			diffs.DocToType[dd.Name] = RemovedDoc
+			diffs.NumRemoved++
+		case dd.IsModify():
+			diffs.DocToType[dd.Name] = ModifiedDoc
+			diffs.NumModified++
 		}
+		diffs.Docs = append(diffs.Docs, dd.Name)
 	}
-	var docs []string
-	docs = append(docs, added...)
-	docs = append(docs, modified...)
-	docs = append(docs, removed...)
-	sort.Strings(docs)
+	sort.Strings(diffs.Docs)
 
-	docsToType := make(map[string]DocDiffType)
-	for _, nt := range added {
-		docsToType[nt] = AddedDoc
-	}
-
-	for _, nt := range modified {
-		docsToType[nt] = ModifiedDoc
-	}
-
-	for _, nt := range removed {
-		docsToType[nt] = RemovedDoc
-	}
-
-	return &DocDiffs{len(added), len(modified), len(removed), docsToType, docs}, nil
+	return &diffs, nil
 }
 
 // Len returns the number of docs in a DocDiffs
@@ -98,17 +82,7 @@ func (nd *DocDiffs) Len() int {
 
 // GetDocDiffs retrieves staged and unstaged DocDiffs.
 func GetDocDiffs(ctx context.Context, dEnv *env.DoltEnv) (*DocDiffs, *DocDiffs, error) {
-	docDetails, err := dEnv.GetAllValidDocDetails()
-	if err != nil {
-		return nil, nil, err
-	}
-
 	workingRoot, err := dEnv.WorkingRoot(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	notStagedDocDiffs, err := NewDocDiffs(ctx, workingRoot, nil, docDetails)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -123,7 +97,12 @@ func GetDocDiffs(ctx context.Context, dEnv *env.DoltEnv) (*DocDiffs, *DocDiffs, 
 		return nil, nil, err
 	}
 
-	stagedDocDiffs, err := NewDocDiffs(ctx, headRoot, stagedRoot, nil)
+	stagedDocDiffs, err := NewDocDiffs(ctx, headRoot, stagedRoot)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	notStagedDocDiffs, err := NewDocDiffs(ctx, stagedRoot, workingRoot)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -141,6 +120,14 @@ type DocDelta struct {
 
 func (dd DocDelta) IsDrop() bool {
 	return dd.FromText != nil && dd.ToText == nil
+}
+
+func (dd DocDelta) IsAdd() bool {
+	return dd.FromText == nil && dd.ToText != nil
+}
+
+func (dd DocDelta) IsModify() bool {
+	return dd.FromText != nil && dd.ToText != nil
 }
 
 func GetDocDeltas(ctx context.Context, fromRoot, toRoot *doltdb.RootValue) (deltas []DocDelta, err error) {
@@ -182,35 +169,6 @@ func GetDocDeltas(ctx context.Context, fromRoot, toRoot *doltdb.RootValue) (delt
 	})
 
 	return deltas, err
-}
-
-func GetStagedUnstagedDocDeltas(ctx context.Context, dEnv *env.DoltEnv) (staged, unstaged []DocDelta, err error) {
-	headRoot, err := dEnv.HeadRoot(ctx)
-	if err != nil {
-		return nil, nil, RootValueUnreadable{HeadRoot, err}
-	}
-
-	stagedRoot, err := dEnv.StagedRoot(ctx)
-	if err != nil {
-		return nil, nil, RootValueUnreadable{StagedRoot, err}
-	}
-
-	workingRoot, err := dEnv.WorkingRoot(ctx)
-	if err != nil {
-		return nil, nil, RootValueUnreadable{WorkingRoot, err}
-	}
-
-	staged, err = GetDocDeltas(ctx, headRoot, stagedRoot)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	unstaged, err = GetDocDeltas(ctx, stagedRoot, workingRoot)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return staged, unstaged, nil
 }
 
 func DiffDoltDocs(ctx context.Context, wr io.WriteCloser, from, to *doltdb.RootValue, docs *set.StrSet) error {

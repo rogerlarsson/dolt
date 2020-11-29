@@ -361,26 +361,6 @@ func writeRoot(ctx context.Context, dEnv *env.DoltEnv, tblHashes map[string]hash
 
 }
 
-func RootsWithTable(ctx context.Context, dEnv *env.DoltEnv, table string) (RootTypeSet, error) {
-	roots, err := getRoots(ctx, dEnv, ActiveRoots...)
-
-	if err != nil {
-		return nil, err
-	}
-
-	rootsWithTable := make([]RootType, 0, len(roots))
-
-	for rt, root := range roots {
-		if has, err := root.HasTable(ctx, table); err != nil {
-			return nil, err
-		} else if has {
-			rootsWithTable = append(rootsWithTable, rt)
-		}
-	}
-
-	return NewRootTypeSet(rootsWithTable...), nil
-}
-
 func IsBranch(ctx context.Context, dEnv *env.DoltEnv, str string) (bool, error) {
 	dref := ref.NewBranchRef(str)
 	return dEnv.DoltDB.HasRef(ctx, dref)

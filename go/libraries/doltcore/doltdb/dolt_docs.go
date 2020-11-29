@@ -40,7 +40,7 @@ type DocDetails struct {
 	File      string
 }
 
-var DocSet = set.NewStrSet([]string{
+var DocNameSet = set.NewStrSet([]string{
 	LicensePk,
 	ReadmePk,
 })

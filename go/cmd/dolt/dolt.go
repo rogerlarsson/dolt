@@ -204,7 +204,6 @@ func runMain() int {
 	}
 
 	err = reconfigIfTempFileMoveFails(dEnv)
-
 	if err != nil {
 		cli.PrintErrln(color.RedString("Failed to setup the temporary directory. %v`", err))
 		return 1
@@ -212,11 +211,21 @@ func runMain() int {
 
 	defer tempfiles.MovableTempFileProvider.Clean()
 
+	if err = env.SyncDocsFromFS(ctx, dEnv); err != nil {
+		cli.PrintErrln("Failed to sync dolt docs from file system. %v", err)
+		return 1
+	}
+
 	res := doltCommand.Exec(ctx, "dolt", args, dEnv)
 
 	if csMetrics && dEnv.DoltDB != nil {
 		metricsSummary := dEnv.DoltDB.CSMetricsSummary()
 		cli.PrintErrln(metricsSummary)
+	}
+
+	if err = env.SyncDocsToFS(ctx, dEnv); err != nil {
+		cli.PrintErrln("Failed to sync dolt docs to file system. %v", err)
+		return 1
 	}
 
 	return res

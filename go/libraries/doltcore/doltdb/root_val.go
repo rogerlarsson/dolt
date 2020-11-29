@@ -995,54 +995,6 @@ func (root *RootValue) RemoveTables(ctx context.Context, tables ...string) (*Roo
 	return newRoot.PutForeignKeyCollection(ctx, fkc)
 }
 
-// DocDiff returns the added, modified and removed docs when comparing a root value with an other (newer) value. If the other value,
-// is not provided, then we compare the docs on the root value to the docDetails provided.
-func (root *RootValue) DocDiff(ctx context.Context, other *RootValue, docDetails []DocDetails) (added, modified, removed []string, err error) {
-	oldTbl, oldTblFound, err := root.GetTable(ctx, DocTableName)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	var oldSch schema.Schema
-	if oldTblFound {
-		sch, err := oldTbl.GetSchema(ctx)
-		if err != nil {
-			return nil, nil, nil, err
-		}
-		oldSch = sch
-	}
-
-	if other == nil {
-		detailsWithValues, err := addValuesToDocs(ctx, oldTbl, &oldSch, docDetails)
-		if err != nil {
-			return nil, nil, nil, err
-		}
-		a, m, r := GetDocDiffsFromDocDetails(ctx, detailsWithValues)
-		return a, m, r, nil
-	}
-
-	newTbl, newTblFound, err := other.GetTable(ctx, DocTableName)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	var newSch schema.Schema
-	if newTblFound {
-		sch, err := newTbl.GetSchema(ctx)
-		if err != nil {
-			return nil, nil, nil, err
-		}
-		newSch = sch
-	}
-
-	docDetailsBtwnRoots, err := getDocDetailsBtwnRoots(ctx, newTbl, newSch, newTblFound, oldTbl, oldSch, oldTblFound)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	a, m, r := GetDocDiffsFromDocDetails(ctx, docDetailsBtwnRoots)
-	return a, m, r, nil
-}
-
 // GetForeignKeyCollection returns the ForeignKeyCollection for this root. As collections are meant to be modified
 // in-place, each returned collection may freely be altered without affecting future returned collections from this root.
 func (root *RootValue) GetForeignKeyCollection(ctx context.Context) (*ForeignKeyCollection, error) {

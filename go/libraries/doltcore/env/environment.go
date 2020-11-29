@@ -69,9 +69,6 @@ type DoltEnv struct {
 	RepoState *RepoState
 	RSLoadErr error
 
-	Docs        Docs
-	DocsLoadErr error
-
 	DoltDB      *doltdb.DoltDB
 	DBLoadError error
 
@@ -84,7 +81,6 @@ type DoltEnv struct {
 func Load(ctx context.Context, hdp HomeDirProvider, fs filesys.Filesys, urlStr, version string) *DoltEnv {
 	config, cfgErr := loadDoltCliConfig(hdp, fs)
 	repoState, rsErr := LoadRepoState(fs)
-	docs, docsErr := LoadDocs(fs)
 	ddb, dbLoadErr := doltdb.LoadDoltDB(ctx, types.Format_Default, urlStr)
 
 	dEnv := &DoltEnv{
@@ -93,8 +89,6 @@ func Load(ctx context.Context, hdp HomeDirProvider, fs filesys.Filesys, urlStr, 
 		cfgErr,
 		repoState,
 		rsErr,
-		docs,
-		docsErr,
 		ddb,
 		dbLoadErr,
 		fs,
@@ -175,23 +169,6 @@ func (dEnv *DoltEnv) HasLocalConfig() bool {
 	_, ok := dEnv.Config.GetConfig(LocalConfig)
 
 	return ok
-}
-
-// GetDoc returns the path to the provided file, if it exists
-func (dEnv *DoltEnv) GetDoc(file string) string {
-	if !hasDocFile(dEnv.FS, file) {
-		return ""
-	}
-	return getDocFile(file)
-}
-
-// GetLocalFileText returns a byte slice representing the contents of the provided file, if it exists
-func (dEnv *DoltEnv) GetLocalFileText(file string) ([]byte, error) {
-	path := dEnv.GetDoc(file)
-	if path != "" {
-		return dEnv.FS.ReadFile(path)
-	}
-	return nil, nil
 }
 
 func (dEnv *DoltEnv) bestEffortDeleteAll(dir string) {
@@ -799,68 +776,24 @@ func (dEnv *DoltEnv) TempTableFilesDir() string {
 	return mustAbs(dEnv, dEnv.GetDoltDir(), tempTablesDir)
 }
 
-func (dEnv *DoltEnv) GetAllValidDocDetails() (docs []doltdb.DocDetails, err error) {
-	docs = []doltdb.DocDetails{}
-	for _, doc := range *AllValidDocDetails {
-		newerText, err := dEnv.GetLocalFileText(doc.File)
-		if err != nil {
-			return nil, err
-		}
-		doc.NewerText = newerText
-		docs = append(docs, doc)
+
+// GetDoc returns the path to the provided file, if it exists
+func (dEnv *DoltEnv) GetDoc(file string) string {
+	if !hasDocFile(dEnv.FS, file) {
+		return ""
 	}
-	return docs, nil
+	return getDocFile(file)
 }
 
-func (dEnv *DoltEnv) GetOneDocDetail(docName string) (doc doltdb.DocDetails, err error) {
-	for _, doc := range *AllValidDocDetails {
-		if doc.DocPk == docName {
-			newerText, err := dEnv.GetLocalFileText(doc.File)
-			if err != nil {
-				return doltdb.DocDetails{}, err
-			}
-			doc.NewerText = newerText
-			return doc, nil
-		}
+// GetLocalFileText returns a byte slice representing the contents of the provided file, if it exists
+func (dEnv *DoltEnv) GetLocalFileText(file string) ([]byte, error) {
+	path := dEnv.GetDoc(file)
+	if path != "" {
+		return dEnv.FS.ReadFile(path)
 	}
-	return doltdb.DocDetails{}, err
+	return nil, nil
 }
 
-// WorkingRootWithDocs returns a copy of the working root that has been updated with the Dolt docs from the file system.
-func (dEnv *DoltEnv) WorkingRootWithDocs(ctx context.Context) (*doltdb.RootValue, error) {
-	dds, err := dEnv.GetAllValidDocDetails()
-	if err != nil {
-		return nil, err
-	}
-
-	wr, err := dEnv.WorkingRoot(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return dEnv.GetUpdatedRootWithDocs(ctx, wr, dds)
-}
-
-// GetUpdatedRootWithDocs adds, updates or removes the `dolt_docs` table on the provided root. The table will be added or updated
-// When at least one doc.NewerText != nil. If the `dolt_docs` table exists and every doc.NewerText == nil, the table will be removed.
-// If no docDetails are provided, we put all valid docs to the working root.
-func (dEnv *DoltEnv) GetUpdatedRootWithDocs(ctx context.Context, root *doltdb.RootValue, docDetails []doltdb.DocDetails) (*doltdb.RootValue, error) {
-	docTbl, found, err := root.GetTable(ctx, doltdb.DocTableName)
-
-	if err != nil {
-		return nil, err
-	}
-
-	docDetails, err = getDocDetails(dEnv, docDetails)
-	if err != nil {
-		return nil, err
-	}
-
-	if found {
-		return updateDocsOnRoot(ctx, dEnv, root, docTbl, docDetails)
-	}
-	return createDocsTableOnRoot(ctx, dEnv, root, docDetails)
-}
 
 // PutDocsToWorking adds, updates or removes the `dolt_docs` table on the working root using the provided docDetails.
 func (dEnv *DoltEnv) PutDocsToWorking(ctx context.Context, docDetails []doltdb.DocDetails) error {
@@ -1080,4 +1013,68 @@ func (dEnv *DoltEnv) GetDocsWithNewerTextFromRoot(ctx context.Context, root *dol
 		docs[i] = doc
 	}
 	return docs, nil
+}
+
+
+func (dEnv *DoltEnv) GetAllValidDocDetails() (docs []doltdb.DocDetails, err error) {
+	docs = []doltdb.DocDetails{}
+	for _, doc := range *AllValidDocDetails {
+		newerText, err := dEnv.GetLocalFileText(doc.File)
+		if err != nil {
+			return nil, err
+		}
+		doc.NewerText = newerText
+		docs = append(docs, doc)
+	}
+	return docs, nil
+}
+
+func (dEnv *DoltEnv) GetOneDocDetail(docName string) (doc doltdb.DocDetails, err error) {
+	for _, doc := range *AllValidDocDetails {
+		if doc.DocPk == docName {
+			newerText, err := dEnv.GetLocalFileText(doc.File)
+			if err != nil {
+				return doltdb.DocDetails{}, err
+			}
+			doc.NewerText = newerText
+			return doc, nil
+		}
+	}
+	return doltdb.DocDetails{}, err
+}
+
+// WorkingRootWithDocs returns a copy of the working root that has been updated with the Dolt docs from the file system.
+func (dEnv *DoltEnv) WorkingRootWithDocs(ctx context.Context) (*doltdb.RootValue, error) {
+	dds, err := dEnv.GetAllValidDocDetails()
+	if err != nil {
+		return nil, err
+	}
+
+	wr, err := dEnv.WorkingRoot(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return dEnv.GetUpdatedRootWithDocs(ctx, wr, dds)
+}
+
+// GetUpdatedRootWithDocs adds, updates or removes the `dolt_docs` table on the provided root. The table will be added or updated
+// When at least one doc.NewerText != nil. If the `dolt_docs` table exists and every doc.NewerText == nil, the table will be removed.
+// If no docDetails are provided, we put all valid docs to the working root.
+func (dEnv *DoltEnv) GetUpdatedRootWithDocs(ctx context.Context, root *doltdb.RootValue, docDetails []doltdb.DocDetails) (*doltdb.RootValue, error) {
+	docTbl, found, err := root.GetTable(ctx, doltdb.DocTableName)
+
+	if err != nil {
+		return nil, err
+	}
+
+	docDetails, err = getDocDetails(dEnv, docDetails)
+	if err != nil {
+		return nil, err
+	}
+
+	if found {
+		return updateDocsOnRoot(ctx, dEnv, root, docTbl, docDetails)
+	}
+	return createDocsTableOnRoot(ctx, dEnv, root, docDetails)
 }

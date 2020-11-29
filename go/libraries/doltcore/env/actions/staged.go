@@ -96,7 +96,7 @@ func splitTablesAndDocs(names []string) (tbls, docs []string) {
 		if nm == doltdb.DocTableName {
 			continue
 		}
-		if doltdb.DocSet.Contains(nm) {
+		if doltdb.DocNameSet.Contains(nm) {
 			docs = append(docs, nm)
 		} else {
 			tbls = append(tbls, nm)
