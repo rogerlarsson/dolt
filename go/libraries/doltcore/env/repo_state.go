@@ -40,7 +40,7 @@ type RepoStateWriter interface {
 	SetWorkingHash(context.Context, hash.Hash) error
 	UpdateStagedRoot(ctx context.Context, newRoot *doltdb.RootValue) (hash.Hash, error)
 	ClearMerge() error
-	//	SetStagedHash(context.Context, hash.Hash) error
+	SetStagedHash(context.Context, hash.Hash) error
 }
 
 type BranchConfig struct {
@@ -214,4 +214,78 @@ func UpdateWorkingRoot(ctx context.Context, ddb *doltdb.DoltDB, writer RepoState
 	}
 
 	return writer.SetWorkingHash(ctx, h)
+}
+
+func ResetWorkingDocsToStagedDocs(ctx context.Context, ddb *doltdb.DoltDB, reader RepoStateReader, writer RepoStateWriter) error {
+	wrkRoot, err := WorkingRoot(ctx, ddb, reader)
+	if err != nil {
+		return err
+	}
+
+	stgRoot, err := StagedRoot(ctx, ddb, reader)
+	if err != nil {
+		return err
+	}
+
+	stgDocTbl, stgDocsFound, err := stgRoot.GetTable(ctx, doltdb.DocTableName)
+	if err != nil {
+		return err
+	}
+
+	_, wrkDocsFound, err := wrkRoot.GetTable(ctx, doltdb.DocTableName)
+	if err != nil {
+		return err
+	}
+
+	if wrkDocsFound && !stgDocsFound {
+		newWrkRoot, err := wrkRoot.RemoveTables(ctx, doltdb.DocTableName)
+		if err != nil {
+			return err
+		}
+		return UpdateWorkingRoot(ctx, ddb, writer, newWrkRoot)
+	}
+
+	if stgDocsFound {
+		newWrkRoot, err := wrkRoot.PutTable(ctx, doltdb.DocTableName, stgDocTbl)
+		if err != nil {
+			return err
+		}
+		return UpdateWorkingRoot(ctx, ddb, writer, newWrkRoot)
+	}
+
+	return nil
+}
+
+func PutDocsToWorking(ctx context.Context, ddb *doltdb.DoltDB, reader RepoStateReader, writer RepoStateWriter, docDetails []doltdb.DocDetails) error {
+	wrkRoot, err := WorkingRoot(ctx, ddb, reader)
+	if err != nil {
+		return err
+	}
+
+	// Insert Get updated Root with docs here
+	docTbl, found, err := wrkRoot.GetTable(ctx, doltdb.DocTableName)
+
+	if err != nil {
+		return err
+	}
+
+	if docDetails == nil {
+		docDetails, err = reader.GetAllValidDocDetails()
+		if err != nil {
+			return err
+		}
+	}
+
+	var rootWithDocs *doltdb.RootValue
+	if found {
+		rootWithDocs, err = UpdateDocsOnRoot(ctx,  wrkRoot, docTbl, docDetails)
+	} else {
+		rootWithDocs, err = CreateDocsTableOnRoot(ctx, ddb.ValueReadWriter(), wrkRoot, docDetails)
+	}
+
+	if err != nil {
+		return err
+	}
+
+	return UpdateWorkingRoot(ctx, ddb, writer, rootWithDocs)
 }
