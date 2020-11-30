@@ -216,7 +216,7 @@ func resetSoft(ctx context.Context, dEnv *env.DoltEnv, apr *argparser.ArgParseRe
 		}
 	}
 
-	tables, docs, err := actions.GetTblsAndDocDetails(dEnv, tbls)
+	tables, docs, err := actions.GetTblsAndDocDetails(dEnv.RepoStateReader(), tbls)
 	if err != nil {
 		return errhand.BuildDError("error: failed to get all tables").AddCause(err).Build()
 	}

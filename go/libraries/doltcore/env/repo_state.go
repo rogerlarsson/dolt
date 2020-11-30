@@ -32,6 +32,7 @@ type RepoStateReader interface {
 	IsMergeActive() bool
 	GetMergeCommit() string
 	GetAllValidDocDetails() ([]doltdb.DocDetails, error)
+	GetOneDocDetail(docName string) (doltdb.DocDetails, error)
 }
 
 type RepoStateWriter interface {
@@ -187,6 +188,12 @@ func (rs *RepoState) GetMergeCommit() string {
 func (rs *RepoState) GetAllValidDocDetails() ([]doltdb.DocDetails, error) {
 	return nil, nil
 }
+
+// TODO: This functionality is currently unsupported by the SQL session.
+func (rs *RepoState) GetOneDocDetail(_ string) (doltdb.DocDetails, error) {
+	return doltdb.DocDetails{}, nil
+}
+
 
 func HeadRoot(ctx context.Context, ddb *doltdb.DoltDB, reader RepoStateReader) (*doltdb.RootValue, error) {
 	commit, err := ddb.ResolveRef(ctx, reader.CWBHeadRef())

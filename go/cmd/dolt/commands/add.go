@@ -91,7 +91,7 @@ func (cmd AddCmd) Exec(ctx context.Context, commandStr string, args []string, dE
 	} else if allFlag || apr.NArg() == 1 && apr.Arg(0) == "." {
 		err = actions.StageAllTables(ctx, dEnv.DoltDB, dEnv.RepoStateReader(), dEnv.RepoStateWriter())
 	} else {
-		err = actions.StageTables(ctx, dEnv, apr.Args())
+		err = actions.StageTables(ctx, dEnv.DoltDB, dEnv.RepoStateReader(), dEnv.RepoStateWriter(), apr.Args())
 	}
 
 	if err != nil {

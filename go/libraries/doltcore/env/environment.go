@@ -399,6 +399,10 @@ func (r *repoStateReader) GetAllValidDocDetails() ([]doltdb.DocDetails, error) {
 	return r.dEnv.GetAllValidDocDetails()
 }
 
+func (r *repoStateReader) GetOneDocDetail(docName string) (doltdb.DocDetails, error) {
+	return r.dEnv.GetOneDocDetail(docName)
+}
+
 func (dEnv *DoltEnv) RepoStateReader() RepoStateReader {
 	return &repoStateReader{dEnv}
 }
