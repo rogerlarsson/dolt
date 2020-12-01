@@ -240,3 +240,21 @@ func getRoots(ctx context.Context, dEnv *env.DoltEnv, rootTypes ...RootType) (ma
 
 	return roots, nil
 }
+
+// TODO: is this the right package?
+func DocCnfsOnWorkingRoot(ctx context.Context, ddb *doltdb.DoltDB, rsr env.RepoStateReader) (bool, error) {
+	workingRoot, err := env.WorkingRoot(ctx, ddb, rsr)
+	if err != nil {
+		return false, err
+	}
+
+	docTbl, found, err := workingRoot.GetTable(ctx, doltdb.DocTableName)
+	if err != nil {
+		return false, err
+	}
+	if !found {
+		return false, nil
+	}
+
+	return docTbl.HasConflicts()
+}

@@ -77,7 +77,7 @@ func (cmd AddCmd) Exec(ctx context.Context, commandStr string, args []string, dE
 
 	if apr.ContainsArg(doltdb.DocTableName) {
 		// Only allow adding the dolt_docs table if it has a conflict to resolve
-		hasConflicts, _ := docCnfsOnWorkingRoot(ctx, dEnv)
+		hasConflicts, _ := actions.DocCnfsOnWorkingRoot(ctx, dEnv.DoltDB, dEnv.RepoStateReader())
 		if !hasConflicts {
 			return HandleDocTableVErrAndExitCode()
 		}

@@ -227,7 +227,7 @@ func printDiffsNotStaged(ctx context.Context, dEnv *env.DoltEnv, wr io.Writer, n
 	}
 
 	numRemovedOrModified := removeModified + notStagedDocs.NumRemoved + notStagedDocs.NumModified
-	docsInCnf, _ := docCnfsOnWorkingRoot(ctx, dEnv)
+	docsInCnf, _ := actions.DocCnfsOnWorkingRoot(ctx, dEnv.DoltDB, dEnv.RepoStateReader())
 
 	if numRemovedOrModified-inCnfSet.Size() > 0 {
 		if linesPrinted > 0 {
@@ -355,21 +355,4 @@ func toStatusVErr(err error) errhand.VerboseError {
 	default:
 		return errhand.BuildDError("Unknown error").AddCause(err).Build()
 	}
-}
-
-func docCnfsOnWorkingRoot(ctx context.Context, dEnv *env.DoltEnv) (bool, error) {
-	workingRoot, err := dEnv.WorkingRoot(ctx)
-	if err != nil {
-		return false, err
-	}
-
-	docTbl, found, err := workingRoot.GetTable(ctx, doltdb.DocTableName)
-	if err != nil {
-		return false, err
-	}
-	if !found {
-		return false, nil
-	}
-
-	return docTbl.HasConflicts()
 }
