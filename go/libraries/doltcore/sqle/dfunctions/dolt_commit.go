@@ -105,6 +105,7 @@ func parseAuthor(authorStr string) (string, string, error) {
 }
 
 // Trims the double quotes for the param.
+// TODO: This method is causing extra spaces
 func trimQuotes(param string) string {
 	if len(param) > 0 && param[0] == '"' {
 		param = param[1:]
@@ -143,7 +144,7 @@ func (d DoltCommitFunc) Eval(ctx *sql.Context, row sql.Row) (interface{}, error)
 	ap := createArgParser()
 
 	// Get the args for DOLT_COMMIT.
-	args := make([]string, 1)
+	args := make([]string, 0)
 	for i := range d.children {
 		temp := d.children[i].String()
 		str := trimQuotes(temp)

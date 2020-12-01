@@ -20,6 +20,7 @@ import (
 	"github.com/dolthub/dolt/go/libraries/doltcore/doltdb"
 	"github.com/dolthub/dolt/go/libraries/doltcore/env/actions"
 	"github.com/dolthub/dolt/go/libraries/doltcore/sqle"
+	"github.com/dolthub/dolt/go/libraries/utils/argparser"
 	"github.com/dolthub/go-mysql-server/sql"
 	"strings"
 )
@@ -55,6 +56,15 @@ func (d DoltAddFunc) IsNullable() bool {
 	return false
 }
 
+
+// TODO: Cleanup the method handle
+func createAddArgParser() *argparser.ArgParser {
+	ap := argparser.NewArgParser()
+	ap.ArgListHelp = append(ap.ArgListHelp, [2]string{"table", "Working table(s) to add to the list tables staged to be committed. The abbreviation '.' can be used to add all tables."})
+	ap.SupportsFlag(allParam, "A", "Stages any and all changes (adds, deletes, and modifications).")
+	return ap
+}
+
 func (d DoltAddFunc) Eval(ctx *sql.Context, row sql.Row) (interface{}, error) {
 	// Get the information for the sql context.
 	dbName := ctx.GetCurrentDatabase()
@@ -78,16 +88,15 @@ func (d DoltAddFunc) Eval(ctx *sql.Context, row sql.Row) (interface{}, error) {
 		return nil, fmt.Errorf("Could not load the %s RepoStateWriter", dbName)
 	}
 
-	ap := createArgParser()
+	ap := createAddArgParser()
 
-	// Get the args for DOLT_ADD.
-	args := make([]string, 1)
+	args := make([]string, 0)
 	for i := range d.children {
 		temp := d.children[i].String()
 		str := trimQuotes(temp)
 		args = append(args, str)
 	}
-
+	
 	apr := cli.ParseArgs(ap, args, nil)
 
 	if apr.ContainsArg(doltdb.DocTableName) {
@@ -109,6 +118,7 @@ func (d DoltAddFunc) Eval(ctx *sql.Context, row sql.Row) (interface{}, error) {
 		err = actions.StageTables(ctx, ddb, rsr, rsw, apr.Args())
 	}
 
+	// TODO: Need to make sure if nothing to add then you return different msg lol
 	return "Files added", err
 }
 
