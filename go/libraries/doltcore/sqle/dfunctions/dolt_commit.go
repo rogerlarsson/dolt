@@ -16,6 +16,9 @@ package dfunctions
 
 import (
 	"fmt"
+	"github.com/dolthub/dolt/go/libraries/doltcore/doltdb"
+	"github.com/dolthub/dolt/go/libraries/doltcore/env"
+	"github.com/dolthub/dolt/go/libraries/utils/argparser"
 
 	"github.com/dolthub/go-mysql-server/sql"
 
@@ -41,22 +44,10 @@ func (d DoltCommitFunc) Eval(ctx *sql.Context, row sql.Row) (interface{}, error)
 	dbName := ctx.GetCurrentDatabase()
 	dSess := sqle.DSessFromSess(ctx.Session)
 
-	ddb, ok := dSess.GetDoltDB(dbName)
+	ddb, rsr, rsw, err := getDdbRswRsrFromSession(dSess, dbName)
 
-	if !ok {
-		return nil, fmt.Errorf("Could not load %s", dbName)
-	}
-
-	rsr, ok := dSess.GetDoltDBRepoStateReader(dbName)
-
-	if !ok {
-		return nil, fmt.Errorf("Could not load the %s RepoStateReader", dbName)
-	}
-
-	rsw, ok := dSess.GetDoltDBRepoStateWriter(dbName)
-
-	if !ok {
-		return nil, fmt.Errorf("Could not load the %s RepoStateWriter", dbName)
+	if err != nil {
+		return nil, nil
 	}
 
 	ap := cli.CreateCommitArgParser()
@@ -84,7 +75,6 @@ func (d DoltCommitFunc) Eval(ctx *sql.Context, row sql.Row) (interface{}, error)
 	// Check if the -all param is provided. Stage all tables if so.
 	allFlag := apr.Contains(cli.AllFlag)
 
-	var err error
 	if allFlag {
 		err = actions.StageAllTables(ctx, ddb, rsr, rsw)
 	}
@@ -93,8 +83,16 @@ func (d DoltCommitFunc) Eval(ctx *sql.Context, row sql.Row) (interface{}, error)
 		return nil, fmt.Errorf(err.Error())
 	}
 
+	h, err := prepareCommit(ctx, apr, dSess, ddb, rsr, rsw)
+
+	return h, err
+}
+
+func prepareCommit(ctx *sql.Context, apr *argparser.ArgParseResults, dSess *sqle.DoltSession,
+                   ddb *doltdb.DoltDB, rsr env.RepoStateReader, rsw env.RepoStateWriter) (interface{}, error){
 	// Parse the author flag. Return an error if not.
 	var name, email string
+	var err error
 	if authorStr, ok := apr.GetValue(cli.AuthorParam); ok {
 		name, email, err = cli.ParseAuthor(authorStr)
 		if err != nil {
@@ -122,7 +120,7 @@ func (d DoltCommitFunc) Eval(ctx *sql.Context, row sql.Row) (interface{}, error)
 		}
 	}
 
-	h, err := actions.CommitStaged(ctx, ddb, rsr, rsw, actions.CommitStagedProps{
+	return actions.CommitStaged(ctx, ddb, rsr, rsw, actions.CommitStagedProps{
 		Message:          msg,
 		Date:             t,
 		AllowEmpty:       apr.Contains(cli.AllowEmptyFlag),
@@ -130,8 +128,6 @@ func (d DoltCommitFunc) Eval(ctx *sql.Context, row sql.Row) (interface{}, error)
 		Name:             name,
 		Email:            email,
 	})
-
-	return h, err
 }
 
 func (d DoltCommitFunc) String() string {

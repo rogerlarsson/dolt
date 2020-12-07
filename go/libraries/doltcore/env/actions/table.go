@@ -16,6 +16,7 @@ package actions
 
 import (
 	"context"
+	"github.com/dolthub/dolt/go/libraries/utils/filesys"
 
 	"github.com/dolthub/dolt/go/libraries/doltcore/diff"
 	"github.com/dolthub/dolt/go/libraries/doltcore/doltdb"
@@ -23,8 +24,8 @@ import (
 	"github.com/dolthub/dolt/go/libraries/utils/set"
 )
 
-func CheckoutAllTables(ctx context.Context, dEnv *env.DoltEnv) error {
-	roots, err := getRoots(ctx, dEnv, WorkingRoot, StagedRoot, HeadRoot)
+func CheckoutAllTables(ctx context.Context, rsr env.RepoStateReader, rsw env.RepoStateWriter, fs filesys.Filesys) error {
+	roots, err := getRoots(ctx, rsr, WorkingRoot, StagedRoot, HeadRoot)
 
 	if err != nil {
 		return err
@@ -38,18 +39,18 @@ func CheckoutAllTables(ctx context.Context, dEnv *env.DoltEnv) error {
 
 	docs := *env.AllValidDocDetails
 
-	return checkoutTablesAndDocs(ctx, dEnv, roots, tbls, docs)
+	return checkoutTablesAndDocs(ctx, rsr, rsw, fs, roots, tbls, docs)
 
 }
 
-func CheckoutTablesAndDocs(ctx context.Context, dEnv *env.DoltEnv, tbls []string, docs []doltdb.DocDetails) error {
-	roots, err := getRoots(ctx, dEnv, WorkingRoot, StagedRoot, HeadRoot)
+func CheckoutTablesAndDocs(ctx context.Context, rsr env.RepoStateReader, rsw env.RepoStateWriter, fs filesys.Filesys, tbls []string, docs []doltdb.DocDetails) error {
+	roots, err := getRoots(ctx, rsr, WorkingRoot, StagedRoot, HeadRoot)
 
 	if err != nil {
 		return err
 	}
 
-	return checkoutTablesAndDocs(ctx, dEnv, roots, tbls, docs)
+	return checkoutTablesAndDocs(ctx, rsr, rsw, fs, roots, tbls, docs)
 }
 
 // MoveTablesBetweenRoots copies tables with names in tbls from the src RootValue to the dest RootValue.
@@ -127,7 +128,7 @@ func MoveTablesBetweenRoots(ctx context.Context, tbls []string, src, dest *doltd
 	return dest, nil
 }
 
-func checkoutTablesAndDocs(ctx context.Context, dEnv *env.DoltEnv, roots map[RootType]*doltdb.RootValue, tbls []string, docs []doltdb.DocDetails) error {
+func checkoutTablesAndDocs(ctx context.Context, rsr env.RepoStateReader, rsw env.RepoStateWriter, fs filesys.Filesys, roots map[RootType]*doltdb.RootValue, tbls []string, docs []doltdb.DocDetails) error {
 	unknownTbls := []string{}
 
 	currRoot := roots[WorkingRoot]
@@ -135,7 +136,7 @@ func checkoutTablesAndDocs(ctx context.Context, dEnv *env.DoltEnv, roots map[Roo
 	head := roots[HeadRoot]
 
 	if len(docs) > 0 {
-		currRootWithDocs, stagedWithDocs, err := getUpdatedWorkingAndStagedWithDocs(ctx, dEnv, currRoot, staged, head, docs)
+		currRootWithDocs, stagedWithDocs, err := getUpdatedWorkingAndStagedWithDocs(ctx, rsr, currRoot, staged, head, docs)
 		if err != nil {
 			return err
 		}
@@ -187,12 +188,13 @@ func checkoutTablesAndDocs(ctx context.Context, dEnv *env.DoltEnv, roots map[Roo
 		}
 	}
 
-	err := dEnv.UpdateWorkingRoot(ctx, currRoot)
+	err := rsw.UpdateWorkingRoot(ctx, currRoot)
 	if err != nil {
 		return err
 	}
 
-	return SaveDocsFromDocDetails(dEnv, docs)
+	// TODO: This needs to be fixed.
+	return SaveDocsFromDocDetails(fs, docs)
 }
 
 func validateTablesExist(ctx context.Context, currRoot *doltdb.RootValue, unknown []string) error {

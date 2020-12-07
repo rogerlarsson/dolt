@@ -411,6 +411,11 @@ func (r *repoStateReader) StagedRoot(ctx context.Context) (*doltdb.RootValue, er
 	return r.dEnv.StagedRoot(ctx)
 }
 
+func (r *repoStateReader) GetUpdatedRootWithDocs(ctx context.Context, root *doltdb.RootValue, docDetails []doltdb.DocDetails) (*doltdb.RootValue, error) {
+	return r.dEnv.GetUpdatedRootWithDocs(ctx, root, docDetails)
+}
+
+
 func (dEnv *DoltEnv) RepoStateReader() RepoStateReader {
 	return &repoStateReader{dEnv}
 }
@@ -459,6 +464,10 @@ func (r *repoStateWriter) PutDocsToWorking(ctx context.Context, docDetails []dol
 
 func (r *repoStateWriter) ResetWorkingDocsToStagedDos(ctx context.Context) error {
 	return r.dEnv.ResetWorkingDocsToStagedDocs(ctx)
+}
+
+func (r *repoStateWriter) StartMerge(h hash.Hash) error {
+	return r.dEnv.RepoState.StartMerge(h.String(), r.dEnv.FS)
 }
 
 func (dEnv *DoltEnv) RepoStateWriter() RepoStateWriter {
@@ -938,7 +947,7 @@ func (dEnv *DoltEnv) GetUpdatedRootWithDocs(ctx context.Context, root *doltdb.Ro
 	if found {
 		return updateDocsOnRoot(ctx, dEnv, root, docTbl, docDetails)
 	}
-	return createDocsTableOnRoot(ctx, dEnv, root, docDetails)
+	return createDocsTableOnRoot(ctx, dEnv.DoltDB, root, docDetails)
 }
 
 // PutDocsToWorking adds, updates or removes the `dolt_docs` table on the working root using the provided docDetails.
@@ -970,7 +979,7 @@ func (dEnv *DoltEnv) PutDocsToStaged(ctx context.Context, docDetails []doltdb.Do
 		return nil, err
 	}
 
-	return createDocsTableOnRoot(ctx, dEnv, rootWithDocs, docDetails)
+	return createDocsTableOnRoot(ctx, dEnv.DoltDB, rootWithDocs, docDetails)
 }
 
 func getDocDetails(dEnv *DoltEnv, docDetails []doltdb.DocDetails) ([]doltdb.DocDetails, error) {
@@ -1068,7 +1077,7 @@ func updateDocsOnRoot(ctx context.Context, dEnv *DoltEnv, root *doltdb.RootValue
 	return root.PutTable(ctx, doltdb.DocTableName, docTbl)
 }
 
-func createDocsTableOnRoot(ctx context.Context, dEnv *DoltEnv, root *doltdb.RootValue, docDetails []doltdb.DocDetails) (*doltdb.RootValue, error) {
+func createDocsTableOnRoot(ctx context.Context, ddb *doltdb.DoltDB, root *doltdb.RootValue, docDetails []doltdb.DocDetails) (*doltdb.RootValue, error) {
 	imt := table.NewInMemTable(DoltDocsSchema)
 
 	createTable := false
@@ -1093,7 +1102,7 @@ func createDocsTableOnRoot(ctx context.Context, dEnv *DoltEnv, root *doltdb.Root
 
 	if createTable {
 		rd := table.NewInMemTableReader(imt)
-		wr := noms.NewNomsMapCreator(context.Background(), dEnv.DoltDB.ValueReadWriter(), DoltDocsSchema)
+		wr := noms.NewNomsMapCreator(context.Background(), ddb.ValueReadWriter(), DoltDocsSchema)
 
 		_, _, err := table.PipeRows(context.Background(), rd, wr, false)
 		if err != nil {
@@ -1123,7 +1132,7 @@ func createDocsTableOnRoot(ctx context.Context, dEnv *DoltEnv, root *doltdb.Root
 //UpdateFSDocsToRootDocs updates the provided docs from the root value, and then saves them to the filesystem.
 // If docs == nil, all valid docs will be retrieved and written.
 func (dEnv *DoltEnv) UpdateFSDocsToRootDocs(ctx context.Context, root *doltdb.RootValue, docs Docs) error {
-	docs, err := dEnv.GetDocsWithNewerTextFromRoot(ctx, root, docs)
+	docs, err := GetDocsWithNewerTextFromRoot(ctx, root, docs)
 	if err != nil {
 		return nil
 	}
@@ -1132,7 +1141,7 @@ func (dEnv *DoltEnv) UpdateFSDocsToRootDocs(ctx context.Context, root *doltdb.Ro
 
 // GetDocsWithNewerTextFromRoot returns Docs with the NewerText value(s) from the provided root. If docs are provided,
 // only those docs will be retrieved and returned. Otherwise, all valid doc details are returned with the updated NewerText.
-func (dEnv *DoltEnv) GetDocsWithNewerTextFromRoot(ctx context.Context, root *doltdb.RootValue, docs Docs) (Docs, error) {
+func GetDocsWithNewerTextFromRoot(ctx context.Context, root *doltdb.RootValue, docs Docs) (Docs, error) {
 	docTbl, docTblFound, err := root.GetTable(ctx, doltdb.DocTableName)
 	if err != nil {
 		return nil, err

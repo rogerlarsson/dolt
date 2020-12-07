@@ -190,7 +190,7 @@ func checkoutNewBranch(ctx context.Context, dEnv *env.DoltEnv, newBranch string,
 }
 
 func checkoutTablesAndDocs(ctx context.Context, dEnv *env.DoltEnv, tables []string, docs []doltdb.DocDetails) errhand.VerboseError {
-	err := actions.CheckoutTablesAndDocs(ctx, dEnv, tables, docs)
+	err := actions.CheckoutTablesAndDocs(ctx, dEnv.RepoStateReader(), dEnv.RepoStateWriter(), dEnv.FS, tables, docs)
 
 	if err != nil {
 		if actions.IsRootValUnreachable(err) {

@@ -32,9 +32,10 @@ type RepoStateReader interface {
 	IsMergeActive() bool
 	GetMergeCommit() string
 	GetAllValidDocDetails() ([]doltdb.DocDetails, error)
-	WorkingRoot(ctx context.Context) (*doltdb.RootValue, error)
-	HeadRoot(ctx context.Context) (*doltdb.RootValue, error)
-	StagedRoot(ctx context.Context) (*doltdb.RootValue, error)
+	WorkingRoot(context.Context) (*doltdb.RootValue, error)
+	HeadRoot(context.Context) (*doltdb.RootValue, error)
+	StagedRoot(context.Context) (*doltdb.RootValue, error)
+	GetUpdatedRootWithDocs(context.Context, *doltdb.RootValue, []doltdb.DocDetails) (*doltdb.RootValue, error)
 }
 
 type RepoStateWriter interface {
@@ -47,6 +48,7 @@ type RepoStateWriter interface {
 	UpdateWorkingRoot(ctx context.Context, newRoot *doltdb.RootValue) error
 	PutDocsToWorking(ctx context.Context, docDetails []doltdb.DocDetails) error
 	ResetWorkingDocsToStagedDos(ctx context.Context) error
+	StartMerge(h hash.Hash) error
 }
 
 type BranchConfig struct {

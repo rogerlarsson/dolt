@@ -92,14 +92,14 @@ func ValidateTablesWithVErr(tbls []string, roots ...*doltdb.RootValue) errhand.V
 	return nil
 }
 
-func ResolveCommitWithVErr(dEnv *env.DoltEnv, cSpecStr string) (*doltdb.Commit, errhand.VerboseError) {
+func ResolveCommitWithVErr(ddb *doltdb.DoltDB, rsr env.RepoStateReader, cSpecStr string) (*doltdb.Commit, errhand.VerboseError) {
 	cs, err := doltdb.NewCommitSpec(cSpecStr)
 
 	if err != nil {
 		return nil, errhand.BuildDError("'%s' is not a valid commit", cSpecStr).Build()
 	}
 
-	cm, err := dEnv.DoltDB.Resolve(context.TODO(), cs, dEnv.RepoState.CWBHeadRef())
+	cm, err := ddb.Resolve(context.TODO(), cs, rsr.CWBHeadRef())
 
 	if err != nil {
 		if err == doltdb.ErrInvalidAncestorSpec {

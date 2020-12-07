@@ -113,7 +113,7 @@ func (cmd MergeCmd) Exec(ctx context.Context, commandStr string, args []string, 
 			return 1
 		}
 
-		verr = abortMerge(ctx, dEnv)
+		verr = actions.AbortMerge(ctx, rsr, dEnv.RepoStateWriter(), dEnv.FS)
 	} else {
 		if apr.NArg() != 1 {
 			usage()
@@ -150,28 +150,14 @@ func (cmd MergeCmd) Exec(ctx context.Context, commandStr string, args []string, 
 	return handleCommitErr(ctx, dEnv, verr, usage)
 }
 
-func abortMerge(ctx context.Context, doltEnv *env.DoltEnv) errhand.VerboseError {
-	err := actions.CheckoutAllTables(ctx, doltEnv)
-
-	if err == nil {
-		err = doltEnv.RepoState.ClearMerge(doltEnv.FS)
-
-		if err == nil {
-			return nil
-		}
-	}
-
-	return errhand.BuildDError("fatal: failed to revert changes").AddCause(err).Build()
-}
-
 func mergeCommitSpec(ctx context.Context, apr *argparser.ArgParseResults, dEnv *env.DoltEnv, commitSpecStr string) errhand.VerboseError {
-	cm1, verr := ResolveCommitWithVErr(dEnv, "HEAD")
+	cm1, verr := ResolveCommitWithVErr(dEnv.DoltDB, dEnv.RepoStateReader(), "HEAD")
 
 	if verr != nil {
 		return verr
 	}
 
-	cm2, verr := ResolveCommitWithVErr(dEnv, commitSpecStr)
+	cm2, verr := ResolveCommitWithVErr(dEnv.DoltDB, dEnv.RepoStateReader(), commitSpecStr)
 
 	if verr != nil {
 		return verr

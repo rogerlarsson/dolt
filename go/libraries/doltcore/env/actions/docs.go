@@ -16,6 +16,7 @@ package actions
 
 import (
 	"context"
+	"github.com/dolthub/dolt/go/libraries/utils/filesys"
 
 	"github.com/dolthub/dolt/go/libraries/doltcore/diff"
 	"github.com/dolthub/dolt/go/libraries/doltcore/doltdb"
@@ -77,8 +78,12 @@ func SaveTrackedDocs(ctx context.Context, dEnv *env.DoltEnv, workRoot, targetRoo
 
 // SaveDocsFromDocDetails saves the provided docs to the filesystem.
 // An untracked doc will be overwritten if doc.NewerText == nil.
-func SaveDocsFromDocDetails(dEnv *env.DoltEnv, docs env.Docs) error {
-	return docs.Save(dEnv.FS)
+func SaveDocsFromDocDetails(fs filesys.Filesys, docs env.Docs) error {
+	if fs != nil {
+		return docs.Save(fs)
+	}
+
+	return nil
 }
 
 func docIsUntracked(doc string, untracked []string) bool {
@@ -114,7 +119,7 @@ func getUntrackedDocs(docs []doltdb.DocDetails, docDiffs *diff.DocDiffs) []strin
 	return untracked
 }
 
-func getUpdatedWorkingAndStagedWithDocs(ctx context.Context, dEnv *env.DoltEnv, working, staged, head *doltdb.RootValue, docDetails []doltdb.DocDetails) (currRoot, stgRoot *doltdb.RootValue, err error) {
+func getUpdatedWorkingAndStagedWithDocs(ctx context.Context, rsr env.RepoStateReader, working, staged, head *doltdb.RootValue, docDetails []doltdb.DocDetails) (currRoot, stgRoot *doltdb.RootValue, err error) {
 	root := head
 	_, ok, err := staged.GetTable(ctx, doltdb.DocTableName)
 	if err != nil {
@@ -123,17 +128,17 @@ func getUpdatedWorkingAndStagedWithDocs(ctx context.Context, dEnv *env.DoltEnv, 
 		root = staged
 	}
 
-	docs, err := dEnv.GetDocsWithNewerTextFromRoot(ctx, root, docDetails)
+	docs, err := env.GetDocsWithNewerTextFromRoot(ctx, root, docDetails)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	currRoot, err = dEnv.GetUpdatedRootWithDocs(ctx, working, docs)
+	currRoot, err = rsr.GetUpdatedRootWithDocs(ctx, working, docs)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	stgRoot, err = dEnv.GetUpdatedRootWithDocs(ctx, staged, docs)
+	stgRoot, err = rsr.GetUpdatedRootWithDocs(ctx, staged, docs)
 	if err != nil {
 		return nil, nil, err
 	}
