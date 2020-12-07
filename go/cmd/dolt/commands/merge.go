@@ -104,9 +104,11 @@ func (cmd MergeCmd) Exec(ctx context.Context, commandStr string, args []string, 
 		return 1
 	}
 
+	rsr := dEnv.RepoStateReader()
+
 	var verr errhand.VerboseError
 	if apr.Contains(abortParam) {
-		if !dEnv.IsMergeActive() {
+		if !rsr.IsMergeActive() {
 			cli.PrintErrln("fatal: There is no merge to abort")
 			return 1
 		}
@@ -120,11 +122,11 @@ func (cmd MergeCmd) Exec(ctx context.Context, commandStr string, args []string, 
 
 		commitSpecStr := apr.Arg(0)
 
-		var root *doltdb.RootValue
-		root, verr = GetWorkingWithVErr(dEnv)
+		var working *doltdb.RootValue
+		working, err := rsr.WorkingRoot(ctx)
 
-		if verr == nil {
-			if has, err := root.HasConflicts(ctx); err != nil {
+		if err == nil {
+			if has, err := working.HasConflicts(ctx); err != nil {
 				verr = errhand.BuildDError("error: failed to get conflicts").AddCause(err).Build()
 			} else if has {
 				cli.Println("error: Merging is not possible because you have unmerged files.")
@@ -132,7 +134,7 @@ func (cmd MergeCmd) Exec(ctx context.Context, commandStr string, args []string, 
 				cli.Println("hint: as appropriate to mark resolution and make a commit.")
 				cli.Println("fatal: Exiting because of an unresolved conflict.")
 				return 1
-			} else if dEnv.IsMergeActive() {
+			} else if rsr.IsMergeActive() {
 				cli.Println("error: Merging is not possible because you have not committed an active merge.")
 				cli.Println("hint: add affected tables using 'dolt add <table>' and commit using {{.EmphasisLeft}}dolt commit -m <msg>{{.EmphasisRight}}")
 				cli.Println("fatal: Exiting because of active merge")
