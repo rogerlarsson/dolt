@@ -62,7 +62,7 @@ func (d DoltMergeFunc) Resolved() bool {
 }
 
 func (d DoltMergeFunc) String() string {
-	panic("implement me")
+	return fmt.Sprintf("commit_hash")
 }
 
 func (d DoltMergeFunc) Type() sql.Type {
@@ -139,6 +139,8 @@ func (d DoltMergeFunc) Eval(ctx *sql.Context, row sql.Row) (interface{}, error) 
 			}
 		}
 	}
+
+	// TODO: Change this fam
 	return "change this fam", err
 }
 
@@ -396,8 +398,6 @@ func getDdbRswRsrFromSession(dSess *sqle.DoltSession, dbName string) (*doltdb.Do
 
 	return ddb, rsr, rsw, nil
 }
-
-
 
 func updateWorkingWithErr(rsw env.RepoStateWriter, updatedRoot *doltdb.RootValue) error {
 	err := rsw.UpdateWorkingRoot(context.Background(), updatedRoot)

@@ -131,11 +131,6 @@ func prepareCommit(ctx *sql.Context, apr *argparser.ArgParseResults, dSess *sqle
 }
 
 func (d DoltCommitFunc) String() string {
-	childrenStrings := make([]string, len(d.children))
-
-	for _, child := range d.children {
-		childrenStrings = append(childrenStrings, child.String())
-	}
 	return fmt.Sprintf("commit_hash")
 }
 
