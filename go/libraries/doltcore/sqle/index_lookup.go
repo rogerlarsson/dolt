@@ -130,10 +130,15 @@ func (il *doltIndexLookup) Union(indexLookups ...sql.IndexLookup) (sql.IndexLook
 
 // RowIter returns a row iterator for this index lookup. The iterator will return the single matching row for the index.
 func (il *doltIndexLookup) RowIter(ctx *sql.Context) (sql.RowIter, error) {
-	readRanges := make([]*noms.ReadRange, len(il.ranges))
-	for i, lookupRange := range il.ranges {
+	return il.RowIterForRanges(ctx, il.ranges)
+}
+
+func (il *doltIndexLookup) RowIterForRanges(ctx *sql.Context, ranges []lookup.Range) (sql.RowIter, error) {
+	readRanges := make([]*noms.ReadRange, len(ranges))
+	for i, lookupRange := range ranges {
 		readRanges[i] = lookupRange.ToReadRange()
 	}
+
 	return NewIndexLookupRowIterAdapter(ctx, il.idx, &doltIndexKeyIter{
 		indexMapIter: noms.NewNomsRangeReader(il.idx.IndexSchema(), il.idx.IndexRowData(), readRanges),
 	}), nil

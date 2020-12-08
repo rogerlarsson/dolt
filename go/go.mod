@@ -22,12 +22,11 @@ require (
 	github.com/dolthub/ishell v0.0.0-20201107004254-1592c0036c8d
 	github.com/dolthub/mmap-go v1.0.4-0.20201107010347-f9f2a9588a66
 	github.com/dolthub/sqllogictest/go v0.0.0-20201105013724-5123fc66e12c
-	github.com/dolthub/vitess v0.0.0-20201123194627-2c51b85a2fb2
+	github.com/dolthub/vitess v0.0.0-20201204232015-9e3805156304
 	github.com/dustin/go-humanize v1.0.0
 	github.com/fatih/color v1.9.0
 	github.com/flynn-archive/go-shlex v0.0.0-20150515145356-3f9db97f8568
 	github.com/go-kit/kit v0.10.0 // indirect
-	github.com/go-ole/go-ole v1.2.4 // indirect
 	github.com/go-openapi/errors v0.19.6 // indirect
 	github.com/go-openapi/strfmt v0.19.5 // indirect
 	github.com/go-sql-driver/mysql v1.5.0
@@ -76,5 +75,7 @@ require (
 )
 
 replace github.com/dolthub/dolt/go/gen/proto/dolt/services/eventsapi => ./gen/proto/dolt/services/eventsapi
+
+replace github.com/dolthub/go-mysql-server => ../../go-mysql-server
 
 go 1.13
