@@ -132,7 +132,6 @@ func (d DoltMergeFunc) Eval(ctx *sql.Context, row sql.Row) (interface{}, error) 
 	return "change this fam", err
 }
 
-// TODO: Remove all build errors
 func mergeCommitSpec(ctx *sql.Context, dSess *sqle.DoltSession, dbName string, apr *argparser.ArgParseResults,
 	 				 commitSpecStr string) error {
 	ddb, rsr, rsw, err := getDdbRswRsrFromSession(dSess, dbName)

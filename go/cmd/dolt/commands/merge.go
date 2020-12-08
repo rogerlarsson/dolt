@@ -151,13 +151,13 @@ func (cmd MergeCmd) Exec(ctx context.Context, commandStr string, args []string, 
 }
 
 func mergeCommitSpec(ctx context.Context, apr *argparser.ArgParseResults, dEnv *env.DoltEnv, commitSpecStr string) errhand.VerboseError {
-	cm1, verr := ResolveCommitWithVErr(dEnv.DoltDB, dEnv.RepoStateReader(), "HEAD")
+	cm1, verr := actions.ResolveCommitWithVErr(dEnv.DoltDB, dEnv.RepoStateReader(), "HEAD")
 
 	if verr != nil {
 		return verr
 	}
 
-	cm2, verr := ResolveCommitWithVErr(dEnv.DoltDB, dEnv.RepoStateReader(), commitSpecStr)
+	cm2, verr := actions.ResolveCommitWithVErr(dEnv.DoltDB, dEnv.RepoStateReader(), commitSpecStr)
 
 	if verr != nil {
 		return verr
