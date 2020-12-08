@@ -414,7 +414,6 @@ func hasMergeConflicts(tblToStats map[string]*merge.MergeStats) bool {
 	return hasConflicts
 }
 
-
 func (d DoltMergeFunc) Children() []sql.Expression {
 	return d.children
 }
