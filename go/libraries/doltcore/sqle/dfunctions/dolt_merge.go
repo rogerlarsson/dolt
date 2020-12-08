@@ -86,22 +86,10 @@ func (d DoltMergeFunc) Eval(ctx *sql.Context, row sql.Row) (interface{}, error) 
 
 	ap := createArgParser()
 
-	// TODO: This can get refactored Get the args for DOLT_MERGE
-	args := make([]string, len(d.children))
-	for i := range d.children {
-		childVal, err := d.children[i].Eval(ctx, row)
+	args, err := getDoltArgs(ctx, row, d.Children())
 
-		if err != nil {
-			return nil, err
-		}
-
-		text, err := sql.Text.Convert(childVal)
-
-		if err != nil {
-			return nil, err
-		}
-
-		args[i] = text.(string)
+	if err != nil {
+		return "", err
 	}
 
 	apr := cli.ParseArgs(ap, args, nil)
@@ -117,7 +105,7 @@ func (d DoltMergeFunc) Eval(ctx *sql.Context, row sql.Row) (interface{}, error) 
 		err = actions.AbortMerge(ctx, rsr, rsw, nil)
 	} else {
 		if apr.NArg() != 1 {
-			return "", fmt.Errorf("Incorrect usage.")
+			return "", fmt.Errorf("Incorrect usage. Be sure to include a branch.")
 		}
 
 		commitSpecStr := apr.Arg(0)
@@ -144,8 +132,7 @@ func (d DoltMergeFunc) Eval(ctx *sql.Context, row sql.Row) (interface{}, error) 
 	return "change this fam", err
 }
 
-
-// TODO: Fix all the error handling
+// TODO: Remove all build errors
 func mergeCommitSpec(ctx *sql.Context, dSess *sqle.DoltSession, dbName string, apr *argparser.ArgParseResults,
 	 				 commitSpecStr string) error {
 	ddb, rsr, rsw, err := getDdbRswRsrFromSession(dSess, dbName)
@@ -154,33 +141,32 @@ func mergeCommitSpec(ctx *sql.Context, dSess *sqle.DoltSession, dbName string, a
 		return err
 	}
 
-	cm1, verr := actions.ResolveCommitWithVErr(ddb, rsr, "HEAD")
+	cm1, err := actions.ResolveCommitWithVErr(ddb, rsr, "HEAD")
 
-	if verr != nil {
-		return verr
+	if err != nil {
+		return fmt.Errorf(err.Error())
 	}
 
-	cm2, verr := actions.ResolveCommitWithVErr(ddb, rsr, commitSpecStr)
+	cm2, err := actions.ResolveCommitWithVErr(ddb, rsr, commitSpecStr)
 
-	if verr != nil {
-		return verr
+	if err != nil {
+		return fmt.Errorf(err.Error())
 	}
 
 	h1, err := cm1.HashOf()
 
 	if err != nil {
-		return errhand.BuildDError("error: failed to get hash of commit").AddCause(err).Build()
+		return err
 	}
 
 	h2, err := cm2.HashOf()
 
 	if err != nil {
-		return errhand.BuildDError("error: failed to get hash of commit").AddCause(err).Build()
+		return err
 	}
 
 	if h1 == h2 {
-		cli.Println("Everything up-to-date")
-		return nil
+		return fmt.Errorf("Everything up-to-date")
 	}
 
 	cli.Println("Updating", h1.String()+".."+h2.String())
@@ -193,18 +179,18 @@ func mergeCommitSpec(ctx *sql.Context, dSess *sqle.DoltSession, dbName string, a
 	headRoot, err := rsr.HeadRoot(ctx)
 
 	if err != nil {
-		return errhand.BuildDError("error: failed to get head root").AddCause(err).Build()
+		return err
 	}
 
 	workingRoot, err := rsr.WorkingRoot(ctx)
 
 	if err != nil {
-		return  errhand.BuildDError("error: failed to get working root").AddCause(err).Build()
+		return err
 	}
 	tblNames, workingDiffs, err := actions.CheckForStompChanges(ctx, headRoot, workingRoot, cm2)
 
 	if err != nil {
-		return errhand.BuildDError("error: failed to determine mergability.").AddCause(err).Build()
+		return err
 	}
 
 	if len(tblNames) != 0 {
@@ -213,12 +199,12 @@ func mergeCommitSpec(ctx *sql.Context, dSess *sqle.DoltSession, dbName string, a
 			bldr.AddDetails(tName)
 		}
 		bldr.AddDetails("Please commit your changes before you merge.")
-		return bldr.Build()
+		return fmt.Errorf(bldr.Build().Error())
 	}
 
 	if ok, err := cm1.CanFastForwardTo(ctx, cm2); ok {
 		if apr.Contains(noFFParam) {
-			return execNoFFMerge(ctx, apr, dSess, dbName, cm2, verr, workingDiffs)
+			return execNoFFMerge(ctx, apr, dSess, dbName, cm2, workingDiffs)
 		} else {
 			return executeFFMerge(ctx, squash, ddb, rsr, rsw, cm2, workingDiffs)
 		}
@@ -231,7 +217,7 @@ func mergeCommitSpec(ctx *sql.Context, dSess *sqle.DoltSession, dbName string, a
 }
 
 func execNoFFMerge(ctx *sql.Context, apr *argparser.ArgParseResults, dSess *sqle.DoltSession, dbName string,
-				   cm2 *doltdb.Commit, verr errhand.VerboseError, workingDiffs map[string]hash.Hash) error {
+				   cm2 *doltdb.Commit, workingDiffs map[string]hash.Hash) error {
 	ddb, rsr, rsw, err := getDdbRswRsrFromSession(dSess, dbName)
 
 	if err != nil {
@@ -241,13 +227,13 @@ func execNoFFMerge(ctx *sql.Context, apr *argparser.ArgParseResults, dSess *sqle
 	mergedRoot, err := cm2.GetRootValue()
 
 	if err != nil {
-		return errhand.BuildDError("error: reading from database").AddCause(err).Build()
+		return err
 	}
 
 	err = mergedRootToWorking(ctx, false, rsw, mergedRoot, workingDiffs, cm2, map[string]*merge.MergeStats{})
 
 	if err != nil {
-		return verr
+		return err
 	}
 
 	_, err = prepareCommit(ctx, apr, dSess, ddb, rsr, rsw)
@@ -257,18 +243,18 @@ func execNoFFMerge(ctx *sql.Context, apr *argparser.ArgParseResults, dSess *sqle
 
 
 func executeFFMerge(ctx context.Context, squash bool, ddb *doltdb.DoltDB, rsr env.RepoStateReader, rsw env.RepoStateWriter,
-					cm2 *doltdb.Commit, workingDiffs map[string]hash.Hash) errhand.VerboseError {
+					cm2 *doltdb.Commit, workingDiffs map[string]hash.Hash) error {
 	cli.Println("Fast-forward")
 
 	rv, err := cm2.GetRootValue()
 
 	if err != nil {
-		return errhand.BuildDError("error: failed to get root value").AddCause(err).Build()
+		return err
 	}
 
 	stagedHash, err := ddb.WriteRootValue(ctx, rv)
 	if err != nil {
-		return errhand.BuildDError("Failed to write database").AddCause(err).Build()
+		return err
 	}
 
 	workingHash := stagedHash
@@ -276,13 +262,13 @@ func executeFFMerge(ctx context.Context, squash bool, ddb *doltdb.DoltDB, rsr en
 		rv, err = actions.ApplyChanges(ctx, rv, workingDiffs)
 
 		if err != nil {
-			return errhand.BuildDError("Failed to re-apply working changes.").AddCause(err).Build()
+			return err
 		}
 
 		workingHash, err = ddb.WriteRootValue(ctx, rv)
 
 		if err != nil {
-			return errhand.BuildDError("Failed to write database").AddCause(err).Build()
+			return err
 		}
 	}
 
@@ -290,7 +276,7 @@ func executeFFMerge(ctx context.Context, squash bool, ddb *doltdb.DoltDB, rsr en
 		err = ddb.FastForward(ctx, rsr.CWBHeadRef(), cm2)
 
 		if err != nil {
-			return errhand.BuildDError("Failed to write database").AddCause(err).Build()
+			return err
 		}
 	}
 
@@ -298,14 +284,7 @@ func executeFFMerge(ctx context.Context, squash bool, ddb *doltdb.DoltDB, rsr en
 	rsw.SetStagedHash(ctx, stagedHash)
 
 	if err != nil {
-		return errhand.BuildDError("unable to execute repo state update.").
-			AddDetails(`As a result your .dolt/repo_state.json file may have invalid values for "staged" and "working".
-At the moment the best way to fix this is to run:
-
-    dolt branch -v
-
-and take the hash for your current branch and use it for the value for "staged" and "working"`).
-			AddCause(err).Build()
+		return err
 	}
 
 	return nil
@@ -319,11 +298,11 @@ func executeMerge(ctx context.Context, squash bool, rsw env.RepoStateWriter, cm1
 	if err != nil {
 		switch err {
 		case doltdb.ErrUpToDate:
-			return errhand.BuildDError("Already up to date.").AddCause(err).Build()
+			return fmt.Errorf("Already up to date.")
 		case merge.ErrFastForward:
 			panic("fast forward merge")
 		default:
-			return errhand.BuildDError("Bad merge").AddCause(err).Build()
+			return err
 		}
 	}
 
@@ -340,21 +319,21 @@ func mergedRootToWorking(ctx context.Context, squash bool, rsw env.RepoStateWrit
 		workingRoot, err = actions.ApplyChanges(ctx, mergedRoot, workingDiffs)
 
 		if err != nil {
-			return errhand.BuildDError("").AddCause(err).Build()
+			return err
 		}
 	}
 
 	h2, err := cm2.HashOf()
 
 	if err != nil {
-		return errhand.BuildDError("error: failed to hash commit").AddCause(err).Build()
+		return err
 	}
 
 	if !squash {
 		err = rsw.StartMerge(h2)
 
 		if err != nil {
-			return errhand.BuildDError("Unable to update the repo state").AddCause(err).Build()
+			return err
 		}
 	}
 
@@ -364,7 +343,7 @@ func mergedRootToWorking(ctx context.Context, squash bool, rsw env.RepoStateWrit
 		hasConflicts := hasMergeConflicts(tblToStats)
 
 		if hasConflicts {
-			cli.Println("Automatic merge failed; fix conflicts and then commit the result.")
+			err = fmt.Errorf("Automatic merge failed; fix conflicts and then commit the result.")
 		} else {
 			err = updateStagedWithErr(rsw, mergedRoot)
 			if err != nil {
@@ -404,9 +383,9 @@ func updateWorkingWithErr(rsw env.RepoStateWriter, updatedRoot *doltdb.RootValue
 
 	switch err {
 	case doltdb.ErrNomsIO:
-		return errhand.BuildDError("fatal: failed to write value").Build()
+		return fmt.Errorf("fatal: failed to write value")
 	case env.ErrStateUpdate:
-		return errhand.BuildDError("fatal: failed to update the working root state").Build()
+		return fmt.Errorf("fatal: failed to update the working root state")
 	}
 
 	return nil
@@ -417,9 +396,9 @@ func updateStagedWithErr(rsw env.RepoStateWriter, updatedRoot *doltdb.RootValue)
 
 	switch err {
 	case doltdb.ErrNomsIO:
-		return errhand.BuildDError("fatal: failed to write value").Build()
+		return fmt.Errorf("fatal: failed to write value")
 	case env.ErrStateUpdate:
-		return errhand.BuildDError("fatal: failed to update the staged root state").Build()
+		return fmt.Errorf("fatal: failed to update the staged root state")
 	}
 
 	return nil
