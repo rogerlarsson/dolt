@@ -125,7 +125,7 @@ func MigrateUniqueTags(ctx context.Context, dEnv *env.DoltEnv) error {
 		return rebasedRoot, nil
 	}
 
-	return AllBranchesByRoots(ctx, dEnv, replay, EntireHistory())
+	return ReplayAllBranchesByRoots(ctx, dEnv, replay, EntireHistory())
 }
 
 // TagRebaseForRef rebases the provided DoltRef, swapping all tags in the TagMapping.

@@ -67,8 +67,10 @@ func StopAtCommit(stopCommit *doltdb.Commit) NeedsRebaseFn {
 	}
 }
 
+// ReplayRootFn defines an operation that produces a rebase version of |root|.
 type ReplayRootFn func(ctx context.Context, root, parentRoot, rebasedParentRoot *doltdb.RootValue) (rebaseRoot *doltdb.RootValue, err error)
 
+// ReplayCommitFn defines an operation that produces a rebase version of |commit|.
 type ReplayCommitFn func(ctx context.Context, commit, parent, rebasedParent *doltdb.Commit) (rebaseRoot *doltdb.RootValue, err error)
 
 // wrapReplayRootFn converts a |ReplayRootFn| to a |ReplayCommitFn|
@@ -93,8 +95,8 @@ func wrapReplayRootFn(fn ReplayRootFn) ReplayCommitFn {
 	}
 }
 
-// AllBranches rewrites the history of all branches in the repo using the |replay| function.
-func AllBranches(ctx context.Context, dEnv *env.DoltEnv, replay ReplayCommitFn, nerf NeedsRebaseFn) error {
+// ReplayAllBranches rewrites the history of all branches in the repo using the |replay| function.
+func ReplayAllBranches(ctx context.Context, dEnv *env.DoltEnv, replay ReplayCommitFn, nerf NeedsRebaseFn) error {
 	branches, err := dEnv.DoltDB.GetBranches(ctx)
 	if err != nil {
 		return err
@@ -103,13 +105,13 @@ func AllBranches(ctx context.Context, dEnv *env.DoltEnv, replay ReplayCommitFn, 
 	return rebaseRefs(ctx, dEnv, replay, nerf, branches...)
 }
 
-// CurrentBranch rewrites the history of the current branch using the |replay| function.
-func CurrentBranch(ctx context.Context, dEnv *env.DoltEnv, replay ReplayCommitFn, nerf NeedsRebaseFn) error {
+// ReplayCurrentBranch rewrites the history of the current branch using the |replay| function.
+func ReplayCurrentBranch(ctx context.Context, dEnv *env.DoltEnv, replay ReplayCommitFn, nerf NeedsRebaseFn) error {
 	return rebaseRefs(ctx, dEnv, replay, nerf, dEnv.RepoState.CWBHeadRef())
 }
 
-// AllBranchesByRoots rewrites the history of all branches in the repo using the |replay| function.
-func AllBranchesByRoots(ctx context.Context, dEnv *env.DoltEnv, replay ReplayRootFn, nerf NeedsRebaseFn) error {
+// ReplayAllBranchesByRoots rewrites the history of all branches in the repo using the |replay| function.
+func ReplayAllBranchesByRoots(ctx context.Context, dEnv *env.DoltEnv, replay ReplayRootFn, nerf NeedsRebaseFn) error {
 	branches, err := dEnv.DoltDB.GetBranches(ctx)
 	if err != nil {
 		return err
@@ -119,8 +121,8 @@ func AllBranchesByRoots(ctx context.Context, dEnv *env.DoltEnv, replay ReplayRoo
 	return rebaseRefs(ctx, dEnv, replayCommit, nerf, branches...)
 }
 
-// CurrentBranchByRoot rewrites the history of the current branch using the |replay| function.
-func CurrentBranchByRoot(ctx context.Context, dEnv *env.DoltEnv, replay ReplayRootFn, nerf NeedsRebaseFn) error {
+// ReplayCurrentBranchByRoots rewrites the history of the current branch using the |replay| function.
+func ReplayCurrentBranchByRoots(ctx context.Context, dEnv *env.DoltEnv, replay ReplayRootFn, nerf NeedsRebaseFn) error {
 	replayCommit := wrapReplayRootFn(replay)
 	return rebaseRefs(ctx, dEnv, replayCommit, nerf, dEnv.RepoState.CWBHeadRef())
 }

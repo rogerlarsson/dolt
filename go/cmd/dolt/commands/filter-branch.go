@@ -106,7 +106,7 @@ func (cmd FilterBranchCmd) Exec(ctx context.Context, commandStr string, args []s
 
 	query := apr.Arg(0)
 	notFound := make(missingTbls)
-	replay := func(ctx context.Context, commit, _, _ *doltdb.Commit) (*doltdb.RootValue, error) {
+	replay := func(ctx context.Context, commit, _ *doltdb.Commit) (*doltdb.RootValue, error) {
 		return processFilterQuery(ctx, dEnv, commit, query, notFound)
 	}
 
@@ -116,9 +116,9 @@ func (cmd FilterBranchCmd) Exec(ctx context.Context, commandStr string, args []s
 	}
 
 	if apr.Contains(allFlag) {
-		err = rebase.AllBranches(ctx, dEnv, replay, nerf)
+		err = rebase.AsyncReplayAllBranches(ctx, dEnv, replay, nerf)
 	} else {
-		err = rebase.CurrentBranch(ctx, dEnv, replay, nerf)
+		err = rebase.AsyncReplayCurrentBranch(ctx, dEnv, replay, nerf)
 	}
 	if err != nil {
 		return HandleVErrAndExitCode(errhand.VerboseErrorFromError(err), usage)
