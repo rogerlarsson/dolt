@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
+	"time"
 
 	"github.com/dolthub/sqllogictest/go/logictest"
 
@@ -25,18 +26,25 @@ import (
 )
 
 // Runs all sqllogictest test files (or directories containing them) given as arguments.
-// Usage: $command (run|parse) [version] [file1.test dir1/ dir2/]
+// Usage: $command (run|run-all|parse) [version] [file1.test dir1/ dir2/]
 // In run mode, runs the tests and prints results to stdout.
+// In run-all mode, runs the tests just as with run mode, but persist the repo state between tests (and fail on NotOk results).
 // In parse mode, parses test results from the file given and prints them to STDOUT in a format to be imported by dolt.
 func main() {
 	args := os.Args[1:]
 
 	if len(args) < 1 {
-		panic("Usage: logictest (run|parse) [version] file1 file2 ...")
+		panic("Usage: logictest (run|run-all|parse) [version] file1 file2 ...")
 	}
 
+	logictest.TruncateQueriesInLog = true
+	logictest.Timeout = time.Minute * 60
 	if args[0] == "run" {
-		h := &dolt.DoltHarness{}
+		h := dolt.NewDoltHarness(false)
+		logictest.RunTestFiles(h, args[1:]...)
+	} else if args[0] == "run-all" {
+		h := dolt.NewDoltHarness(true)
+		logictest.ExitOnNotOk = true
 		logictest.RunTestFiles(h, args[1:]...)
 	} else if args[0] == "parse" {
 		if len(args) < 3 {
@@ -89,7 +97,7 @@ func NewDoltRecordResult(e *logictest.ResultLogEntry, version string) *DoltResul
 		result = "not ok"
 	case logictest.Skipped:
 		result = "skipped"
-	case logictest.Timeout:
+	case logictest.Timedout:
 		result = "timeout"
 	case logictest.DidNotRun:
 		result = "did not run"

@@ -42,9 +42,19 @@ type DoltHarness struct {
 	Version string
 	engine  *sqle.Engine
 
-	sess    *dsql.DoltSession
-	idxReg  *sql.IndexRegistry
-	viewReg *sql.ViewRegistry
+	sess       *dsql.DoltSession
+	idxReg     *sql.IndexRegistry
+	viewReg    *sql.ViewRegistry
+	persist    bool
+	alreadyRan bool
+}
+
+// NewDoltHarness returns a DoltHarness. The parameter persist specifies whether to save the repository after each test.
+// If false, will reload the repository rather than save it.
+func NewDoltHarness(persist bool) *DoltHarness {
+	return &DoltHarness{
+		persist: persist,
+	}
 }
 
 func (h *DoltHarness) EngineStr() string {
@@ -52,12 +62,11 @@ func (h *DoltHarness) EngineStr() string {
 }
 
 func (h *DoltHarness) Init() error {
-	dEnv := env.Load(context.Background(), env.GetCurrentUserHomeDir, filesys.LocalFS, doltdb.LocalDirDoltDB, "test")
-	if !dEnv.HasDoltDir() {
-		panic("Current directory must be a valid dolt repository")
+	if h.persist {
+		return h.persistingInit()
+	} else {
+		return h.reloadingInit()
 	}
-
-	return innerInit(h, dEnv)
 }
 
 func (h *DoltHarness) ExecuteStatement(statement string) error {
@@ -113,6 +122,49 @@ func (h *DoltHarness) ExecuteQuery(statement string) (schema string, results []s
 	}
 
 	return schemaString, results, nil
+}
+
+var dEnv = env.Load(context.Background(), env.GetCurrentUserHomeDir, filesys.LocalFS, doltdb.LocalDirDoltDB, "test")
+func (h *DoltHarness) Env() *env.DoltEnv {
+	return dEnv
+}
+
+func (h *DoltHarness) GetRoot() *doltdb.RootValue {
+	root, ok := h.sess.GetRoot(h.sess.GetCurrentDatabase())
+	if !ok {
+		panic("could not load root which should exist")
+	}
+	return root
+}
+
+func (h *DoltHarness) reloadingInit() error {
+	dEnv := env.Load(context.Background(), env.GetCurrentUserHomeDir, filesys.LocalFS, doltdb.LocalDirDoltDB, "test")
+	if !dEnv.HasDoltDir() {
+		panic("Current directory must be a valid dolt repository")
+	}
+
+	return innerInit(h, dEnv)
+}
+
+func(h *DoltHarness) persistingInit() error {
+	if !h.alreadyRan {
+		h.alreadyRan = true
+		if !dEnv.HasDoltDir() {
+			panic("Current directory must be a valid dolt repository")
+		}
+	} else {
+		root, _ := h.sess.GetRoot(h.sess.GetCurrentDatabase())
+		err := dEnv.UpdateWorkingRoot(context.Background(), root)
+		if err != nil {
+			return err
+		}
+		ret := commands.GarbageCollectionCmd{}.Exec(context.Background(), "", nil, dEnv)
+		if ret != 0 {
+			panic("returned non-zero from gc")
+		}
+		dEnv = env.Load(context.Background(), env.GetCurrentUserHomeDir, filesys.LocalFS, doltdb.LocalDirDoltDB, "test")
+	}
+	return innerInit(h, dEnv)
 }
 
 func innerInit(h *DoltHarness, dEnv *env.DoltEnv) error {
