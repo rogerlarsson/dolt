@@ -28,7 +28,7 @@ type tupleRow struct {
 
 var _ Row = tupleRow{}
 
-func RowFromTuples(key, val types.Tuple) Row {
+func pkFromTuples(key, val types.Tuple) Row {
 	return tupleRow{
 		key: key,
 		val: val,
@@ -45,12 +45,12 @@ func (r tupleRow) NomsMapValue(sch schema.Schema) types.Valuable {
 
 func (r tupleRow) IterCols(cb func(tag uint64, val types.Value) (stop bool, err error)) (bool, error) {
 	stop, err := iterTuple(r.key, cb)
-	if err != nil || !stop {
+	if err != nil || stop {
 		return stop, err
 	}
 
 	stop, err = iterTuple(r.val, cb)
-	if err != nil || !stop {
+	if err != nil || stop {
 		return stop, err
 	}
 

@@ -67,7 +67,7 @@ func FromNoms(sch schema.Schema, nomsKey, nomsVal types.Tuple) (Row, error) {
 		row, _, err := KeylessRowsFromTuples(nomsKey, nomsVal)
 		return row, err
 	}
-	return pkRowFromNoms(sch, nomsKey, nomsVal)
+	return pkFromTuples(nomsKey, nomsVal), nil
 }
 
 // ToNoms returns the storage-layer tuples corresponding to |r|.
