@@ -25,6 +25,7 @@ import (
 	"encoding/binary"
 	"math"
 	"time"
+	"unsafe"
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
@@ -296,10 +297,9 @@ func (b *binaryNomsReader) skipBool() {
 
 func (b *binaryNomsReader) ReadString() string {
 	size := uint32(b.readCount())
-
-	v := string(b.buff[b.offset : b.offset+size])
+	bytes := b.buff[b.offset : b.offset+size]
 	b.offset += size
-	return v
+	return *(*string)(unsafe.Pointer(&bytes))
 }
 
 func (b *binaryNomsReader) ReadInlineBlob() []byte {
