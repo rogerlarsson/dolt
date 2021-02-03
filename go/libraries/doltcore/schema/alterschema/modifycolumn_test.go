@@ -61,12 +61,12 @@ func TestModifyColumn(t *testing.T) {
 		},
 		{
 			name:           "remove null constraint",
-			existingColumn: schema.NewColumn("id", dtestutils.IdTag, types.UUIDKind, true, schema.NotNullConstraint{}),
-			newColumn:      schema.NewColumn("newId", dtestutils.IdTag, types.UUIDKind, true),
+			existingColumn: schema.NewColumn("age", dtestutils.AgeTag, types.UintKind, false, schema.NotNullConstraint{}),
+			newColumn:      schema.NewColumn("newAge", dtestutils.AgeTag, types.UintKind, false),
 			expectedSchema: dtestutils.CreateSchema(
-				schema.NewColumn("newId", dtestutils.IdTag, types.UUIDKind, true),
+				schema.NewColumn("id", dtestutils.IdTag, types.UUIDKind, true, schema.NotNullConstraint{}),
 				schema.NewColumn("name", dtestutils.NameTag, types.StringKind, false, schema.NotNullConstraint{}),
-				schema.NewColumn("age", dtestutils.AgeTag, types.UintKind, false, schema.NotNullConstraint{}),
+				schema.NewColumn("newAge", dtestutils.AgeTag, types.UintKind, false),
 				schema.NewColumn("is_married", dtestutils.IsMarriedTag, types.BoolKind, false, schema.NotNullConstraint{}),
 				schema.NewColumn("title", dtestutils.TitleTag, types.StringKind, false),
 			),

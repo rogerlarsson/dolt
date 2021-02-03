@@ -158,9 +158,9 @@ SQL
     dolt push origin master
     dolt clone file://remotedir original
     
-    dolt schema change-type Test2 V1 'varchar(300)'
-    dolt schema change-type TEST2 PK2 'tinyint'
-    dolt schema change-type Test2 V2 'varchar(1024)'
+    dolt sql -q "ALTER TABLE Test2 MODIFY V1 varchar(300) not null"
+    dolt sql -q "ALTER TABLE TEST2 MODIFY PK2 tinyint not null"
+    dolt sql -q "ALTER TABLE Test2 MODIFY V2 varchar(1024) not null"
 
     run dolt diff
     [ "$status" -eq 0 ]
