@@ -15,8 +15,9 @@
 package sqle
 
 import (
-	"github.com/dolthub/go-mysql-server/sql"
 	"io"
+
+	"github.com/dolthub/go-mysql-server/sql"
 
 	"github.com/dolthub/dolt/go/libraries/doltcore/schema"
 	"github.com/dolthub/dolt/go/libraries/utils/set"
